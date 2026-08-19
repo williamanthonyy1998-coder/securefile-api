@@ -3,3 +3,7 @@ dist/
 .env
 storage/uploads/*
 *.log
+backend/storage/
+storage/
+node_modules/
+.env
