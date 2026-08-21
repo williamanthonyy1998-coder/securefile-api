@@ -5,6 +5,7 @@ import {auth,AuthedRequest,role} from '../middleware/auth';
 import {createCheckoutSession,verifyStripeSignature,setStripeSubscriptionCancelAtPeriodEnd,cancelStripeSubscription} from '../services/payment';
 import {env} from '../config/env';
 import {calculatePrice,addonSchema,getPlan,pricePlan} from '../services/pricing';
+import {Prisma} from '@prisma/client';
 
 const r=Router();
 
@@ -124,7 +125,7 @@ r.post('/stripe-webhook',async(req,res)=>{
           const newCustomerId=String(obj.customer||'');
           const expires=new Date(starts.getTime()+months*30*24*60*60*1000);
           await db.$transaction([
-            db.subscription.update({where:{id:subscriptionId},data:{planCode:String(metadata.planCode||current.planCode),users,storageGb,months,priceCents:totalPriceCents,status:'ACTIVE',startsAt:starts,expiresAt:expires,provider:'stripe',providerRef:String(obj.id),stripeCustomerId:newCustomerId||current.stripeCustomerId,stripeSubscriptionId:null,billingInterval:'one-time',cancelAtPeriodEnd:false,addons,pendingPlanCode:null,pendingUsers:null,pendingStorageGb:null,pendingMonths:null,pendingPriceCents:null,pendingAddons:null,pendingCheckoutId:null}}),
+            db.subscription.update({where:{id:subscriptionId},data:{planCode:String(metadata.planCode||current.planCode),users,storageGb,months,priceCents:totalPriceCents,status:'ACTIVE',startsAt:starts,expiresAt:expires,provider:'stripe',providerRef:String(obj.id),stripeCustomerId:newCustomerId||current.stripeCustomerId,stripeSubscriptionId:null,billingInterval:'one-time',cancelAtPeriodEnd:false,addons,pendingPlanCode:null,pendingUsers:null,pendingStorageGb:null,pendingMonths:null,pendingPriceCents:null,pendingAddons:Prisma.JsonNull,pendingCheckoutId:null}}),
             db.company.update({where:{id:companyId},data:{storageLimitGb:storageGb}})
           ]);
           const usersToNotify=await db.user.findMany({where:{companyId,status:{not:'SUSPENDED'}},select:{id:true}});
