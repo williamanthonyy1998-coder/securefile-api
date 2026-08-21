@@ -1,7 +1,7 @@
 import { useEffect, useState } from 'react';
 import { useNavigate, useParams } from 'react-router-dom';
 import { ArrowLeft, Download, ZoomIn, ZoomOut, RotateCcw, FileText } from 'lucide-react';
-import { API, api, token } from '../lib/api';
+import { api, getSignedFileUrl } from '../lib/api';
 
 export default function FileViewer(){
   const { id } = useParams();
@@ -19,9 +19,9 @@ export default function FileViewer(){
         setLoading(true); setError('');
         const meta=await api(`/files/${encodeURIComponent(String(id))}`);
         setFile(meta);
-        const r=await fetch(`${API}/files/${encodeURIComponent(String(id))}/preview`,{headers:{Authorization:`Bearer ${token()}`}});
-        if(!r.ok){ let msg='Preview unavailable.'; try{const j=await r.json();msg=j?.error||msg}catch{} throw new Error(msg); }
-        objectUrl=URL.createObjectURL(await r.blob()); setUrl(objectUrl);
+        const signed=await getSignedFileUrl(String(id),'preview');
+        if(!signed)throw new Error('Preview URL was not returned.');
+        setUrl(signed);
       }catch(e:any){setError(e.message||'Unable to open file.');}
       finally{setLoading(false);}
     })();
@@ -30,9 +30,11 @@ export default function FileViewer(){
 
   async function download(){
     if(!file)return;
-    const r=await fetch(`${API}/files/${encodeURIComponent(String(id))}/download`,{headers:{Authorization:`Bearer ${token()}`}});
-    if(!r.ok){setError('Download failed or permission denied.');return;}
-    const d=r.headers.get('content-disposition')||''; const u=d.match(/filename\*=UTF-8''([^;]+)/i); const b=d.match(/filename=\"?([^\";]+)\"?/i); const serverName=u?decodeURIComponent(u[1]):(b?b[1]:''); const name=file.name||serverName; const blob=await r.blob(),u2=URL.createObjectURL(blob),a=document.createElement('a');a.href=u2;a.download=name;document.body.appendChild(a);a.click();a.remove();setTimeout(()=>URL.revokeObjectURL(u2),1000);
+    try{
+      const signed=await getSignedFileUrl(String(id),'download');
+      if(!signed)throw new Error('Download URL was not returned.');
+      const a=document.createElement('a'); a.href=signed; a.target='_blank'; a.rel='noopener'; a.style.display='none'; document.body.appendChild(a); a.click(); a.remove();
+    }catch(e:any){setError(e.message||'Download failed.');}
   }
 
   const image=!!file?.mimeType?.startsWith('image/');

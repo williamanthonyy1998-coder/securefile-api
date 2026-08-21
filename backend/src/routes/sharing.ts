@@ -1,8 +1,117 @@
-import {Router} from 'express'; import {db} from '../db'; import {auth,AuthedRequest} from '../middleware/auth'; import {hashPassword,hashToken,randomToken} from '../utils/security'; import {getFileAccess,getFolderAccess} from '../services/access'; import {activeSubscription} from '../middleware/subscription'; import {requireAddon} from '../services/entitlements';
-const r=Router();
-function validType(t:string){return t==='PUBLIC'||t==='INTERNAL'?t:'INTERNAL'}
-r.post('/',auth,activeSubscription,async(req:AuthedRequest,res,next)=>{try{const {fileId,folderId,recipientId,permissions={},password,expiresAt}=req.body;const type=validType(String(req.body.type||'INTERNAL'));if(!req.user?.companyId||(!fileId&&!folderId)||(fileId&&folderId))return res.status(400).json({error:'Exactly one resource is required'});if(req.user!.role!=='COMPANY_ADMIN' && req.user!.role!=='SUPER_ADMIN'){ const existing=await db.share.findFirst({where:{companyId:req.user!.companyId!,OR:[...(fileId?[{fileId}]:[]),...(folderId?[{folderId}]:[])],recipientId:req.user!.id}}); if(existing) await requireAddon(req.user!.companyId!,'reshare'); } const source=fileId?await getFileAccess(req.user.id,req.user.role,req.user.companyId,fileId,'share'):await getFolderAccess(req.user.id,req.user.role,req.user.companyId,folderId,'share');if(!source)return res.status(403).json({error:'Share permission denied'});let recipient=null;if(type==='INTERNAL'){if(!recipientId)return res.status(400).json({error:'Recipient required'});recipient=await db.user.findFirst({where:{id:recipientId,companyId:req.user.companyId}});if(!recipient)return res.status(404).json({error:'Recipient not found'});}const rawPublic=type==='PUBLIC'?randomToken():null;const s=await db.share.create({data:{companyId:req.user.companyId,fileId,folderId,ownerId:req.user.id,recipientId:type==='INTERNAL'?recipientId:undefined,type,publicTokenHash:rawPublic?hashToken(rawPublic):undefined,canView:permissions.view!==false,canDownload:!!permissions.download,canUpload:!!permissions.upload,canEdit:!!permissions.edit,canDelete:!!permissions.delete,canShare:!!permissions.share,passwordHash:password?await hashPassword(password):undefined,expiresAt:expiresAt?new Date(expiresAt):undefined}});res.status(201).json({...s,publicToken:rawPublic});}catch(e){next(e)}});
-r.get('/',auth,async(req:AuthedRequest,res)=>res.json(await db.share.findMany({where:{companyId:req.user!.companyId!,OR:[{ownerId:req.user!.id},{recipientId:req.user!.id}]},include:{file:{select:{id:true,name:true}},folder:{select:{id:true,name:true}},recipient:{select:{email:true,uniqueName:true}}},orderBy:{createdAt:'desc'}})));
-r.patch('/:id',auth,activeSubscription,async(req:AuthedRequest,res)=>{const s=await db.share.findFirst({where:{id:String(req.params.id),companyId:req.user!.companyId!,ownerId:req.user!.id}});if(!s)return res.status(404).json({error:'Share not found'});res.json(await db.share.update({where:{id:s.id},data:{canView:req.body.canView??s.canView,canDownload:req.body.canDownload??s.canDownload,canUpload:req.body.canUpload??s.canUpload,canEdit:req.body.canEdit??s.canEdit,canDelete:req.body.canDelete??s.canDelete,canShare:req.body.canShare??s.canShare,expiresAt:req.body.expiresAt===null?null:req.body.expiresAt?new Date(req.body.expiresAt):s.expiresAt}}));});
-r.delete('/:id',auth,activeSubscription,async(req:AuthedRequest,res)=>{const s=await db.share.findFirst({where:{id:String(req.params.id),companyId:req.user!.companyId!,ownerId:req.user!.id}});if(!s)return res.status(404).json({error:'Share not found'});await db.share.delete({where:{id:s.id}});res.status(204).end()});
+import { Router } from 'express';
+import { db } from '../db';
+import { auth, AuthedRequest } from '../middleware/auth';
+import { hashPassword, hashToken, randomToken } from '../utils/security';
+import { getFileAccess, getFolderAccess } from '../services/access';
+import { activeSubscription } from '../middleware/subscription';
+import { requireAddon } from '../services/entitlements';
+import { notify } from '../services/notify';
+
+const r = Router();
+const permissionKeys = ['canView', 'canDownload', 'canUpload', 'canEdit', 'canDelete', 'canShare'] as const;
+
+function validType(t: string) { return t === 'PUBLIC' || t === 'INTERNAL' ? t : 'INTERNAL'; }
+
+async function canManageShare(req: AuthedRequest, share: any) {
+  if (req.user!.role === 'COMPANY_ADMIN' || req.user!.role === 'SUPER_ADMIN') return true;
+  if (share.ownerId === req.user!.id) return true;
+  return Boolean(share.recipientId === req.user!.id && share.canShare);
+}
+
+r.post('/', auth, activeSubscription, async (req: AuthedRequest, res, next) => {
+  try {
+    const companyId = req.user!.companyId!;
+    const { fileId, folderId, recipientId, permissions = {}, password, expiresAt } = req.body;
+    const type = validType(String(req.body.type || 'INTERNAL'));
+    if ((!fileId && !folderId) || (fileId && folderId)) return res.status(400).json({ error: 'Exactly one resource is required' });
+
+    const source = fileId
+      ? await getFileAccess(req.user!.id, req.user!.role, companyId, String(fileId), 'share')
+      : await getFolderAccess(req.user!.id, req.user!.role, companyId, String(folderId), 'share');
+    if (!source) return res.status(403).json({ error: 'Share permission denied' });
+    if (Boolean(permissions.share)) await requireAddon(companyId, 'reshare');
+
+    // Initial owner/admin sharing is part of the core workflow. The paid re-share
+    // add-on is required only when a non-owner is sharing onward.
+    const sourceOwnerId = (source as any).ownerId;
+    if (req.user!.role !== 'COMPANY_ADMIN' && req.user!.role !== 'SUPER_ADMIN' && sourceOwnerId !== req.user!.id) {
+      await requireAddon(companyId, 'reshare');
+    }
+
+    let recipient = null;
+    if (type === 'INTERNAL') {
+      if (!recipientId) return res.status(400).json({ error: 'Recipient required' });
+      if (String(recipientId) === req.user!.id) return res.status(400).json({ error: 'You cannot share a resource with yourself' });
+      recipient = await db.user.findFirst({ where: { id: String(recipientId), companyId, status: 'ACTIVE' } });
+      if (!recipient) return res.status(404).json({ error: 'Recipient not found or not active' });
+    }
+
+    const rawPublic = type === 'PUBLIC' ? randomToken() : null;
+    const s = await db.share.create({
+      data: {
+        companyId,
+        fileId: fileId ? String(fileId) : undefined,
+        folderId: folderId ? String(folderId) : undefined,
+        ownerId: req.user!.id,
+        recipientId: type === 'INTERNAL' ? String(recipientId) : undefined,
+        type,
+        publicTokenHash: rawPublic ? hashToken(rawPublic) : undefined,
+        canView: permissions.view !== false,
+        canDownload: Boolean(permissions.download),
+        canUpload: Boolean(permissions.upload),
+        canEdit: Boolean(permissions.edit),
+        canDelete: Boolean(permissions.delete),
+        canShare: Boolean(permissions.share),
+        passwordHash: password ? await hashPassword(String(password)) : undefined,
+        expiresAt: expiresAt ? new Date(expiresAt) : undefined
+      }
+    });
+    if (recipient) {
+      const resourceName = fileId ? (await db.file.findUnique({where:{id:String(fileId)},select:{name:true}}))?.name : (await db.folder.findUnique({where:{id:String(folderId)},select:{name:true}}))?.name;
+      const sharer = await db.user.findUnique({where:{id:req.user!.id},select:{uniqueName:true,email:true}});
+      await notify(recipient.id,'Resource shared with you',`${resourceName||'A resource'} was shared with you by ${sharer?.uniqueName||sharer?.email||'a SecureFile user'}.`,companyId);
+    }
+    res.status(201).json({ ...s, publicToken: rawPublic });
+  } catch (e) { next(e); }
+});
+
+r.get('/', auth, async (req: AuthedRequest, res, next) => {
+  try {
+    const shares = await db.share.findMany({
+      where: { companyId: req.user!.companyId!, OR: [{ ownerId: req.user!.id }, { recipientId: req.user!.id }] },
+      include: {
+        file: { select: { id: true, name: true } },
+        folder: { select: { id: true, name: true } },
+        recipient: { select: { id: true, email: true, uniqueName: true } },
+        owner: { select: { id: true, email: true, uniqueName: true } }
+      },
+      orderBy: { createdAt: 'desc' }
+    });
+    res.json(shares.map(s => ({ ...s, manageable: s.ownerId === req.user!.id || req.user!.role === 'COMPANY_ADMIN' || req.user!.role === 'SUPER_ADMIN' || (s.recipientId === req.user!.id && s.canShare) })));
+  } catch (e) { next(e); }
+});
+
+r.patch('/:id', auth, activeSubscription, async (req: AuthedRequest, res, next) => {
+  try {
+    const s = await db.share.findFirst({ where: { id: String(req.params.id), companyId: req.user!.companyId! } });
+    if (!s || !(await canManageShare(req, s))) return res.status(403).json({ error: 'You do not have permission to manage this share' });
+    const data: any = {};
+    for (const key of permissionKeys) if (req.body[key] !== undefined) data[key] = Boolean(req.body[key]);
+    if (data.canShare === true) await requireAddon(s.companyId, 'reshare');
+    if (req.body.expiresAt === null) data.expiresAt = null;
+    else if (req.body.expiresAt) data.expiresAt = new Date(req.body.expiresAt);
+    const updated = await db.share.update({ where: { id: s.id }, data });
+    res.json(updated);
+  } catch (e) { next(e); }
+});
+
+r.delete('/:id', auth, activeSubscription, async (req: AuthedRequest, res, next) => {
+  try {
+    const s = await db.share.findFirst({ where: { id: String(req.params.id), companyId: req.user!.companyId! } });
+    if (!s || !(await canManageShare(req, s))) return res.status(403).json({ error: 'You do not have permission to revoke this share' });
+    await db.share.delete({ where: { id: s.id } });
+    res.status(204).end();
+  } catch (e) { next(e); }
+});
+
 export default r;
