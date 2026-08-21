@@ -1,4 +1,6 @@
+import crypto from 'node:crypto';
 import { env } from '../config/env';
+import { db } from '../db';
 
 function esc(value: string) {
   return value.replace(/[&<>'"]/g, c => ({ '&':'&amp;', '<':'&lt;', '>':'&gt;', "'":'&#39;', '"':'&quot;' }[c]!));
@@ -29,4 +31,18 @@ export async function sendEmail(to: string, subject: string, html: string) {
     return { delivered: true, provider: 'resend', id: data?.id };
   }
   throw new Error('Unsupported email provider');
+}
+
+
+/** Send an email and mirror user-targeted system mail into the SecureFile mailbox. */
+export async function sendUserEmail(to: string, subject: string, html: string) {
+  const result = await sendEmail(to, subject, html);
+  const user = await db.user.findUnique({ where: { email: to.toLowerCase().trim() }, select: { id: true, companyId: true, email: true } });
+  if (user?.companyId) {
+    await db.$executeRaw`
+      INSERT INTO "EmailMessage" ("id","companyId","senderId","recipientId","recipientEmail","subject","body","direction","createdAt")
+      VALUES (${crypto.randomUUID()},${user.companyId},${null},${user.id},${user.email},${subject},${html},'RECEIVED',NOW())
+    `.catch(() => undefined);
+  }
+  return result;
 }

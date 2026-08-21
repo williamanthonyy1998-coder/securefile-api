@@ -175,8 +175,8 @@ export default function Users() {
 
         {(open === 'create' || open === 'edit') && <form onSubmit={open === 'create' ? create : saveEdit}>
           <label>Full name<input value={form.name} onChange={e => setForm({...form,name:e.target.value})} required /></label>
-          <label>Email<input type="email" value={form.email} onChange={e => setForm({...form,email:e.target.value})} required disabled={open === 'edit'} /></label>
-          <label>Role<select value={form.role} onChange={e => setForm({...form,role:e.target.value})}><option value="EMPLOYEE">Employee</option><option value="CLIENT">Client</option></select></label>
+          <label>Email<input type="email" autoComplete="email" value={form.email} onChange={e => setForm({...form,email:e.target.value})} required disabled={open === 'edit'} /></label>
+          <p className="muted" style={{marginTop:4}}>The invitation is sent to this email. The user must open it and set a password before the account becomes active.</p><label>Role<select value={form.role} onChange={e => setForm({...form,role:e.target.value})}><option value="EMPLOYEE">Employee</option><option value="CLIENT">Client</option></select></label>
           <label className="checkline"><input type="checkbox" checked={form.personalFolderAllowed} onChange={e => setForm({...form,personalFolderAllowed:e.target.checked})}/> Allow personal folder</label>
           <div className="modal-actions"><button type="button" className="btn secondary" onClick={close}>Cancel</button><button className="btn">{open === 'create' ? 'Send invitation' : 'Save changes'}</button></div>
         </form>}

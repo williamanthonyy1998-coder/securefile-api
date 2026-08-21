@@ -8,5 +8,11 @@
       "root": "backend/",
       "entrypoint": "api/index.ts"
     }
-  }
+  },
+  "crons": [
+    {
+      "path": "/api/cron/maintenance",
+      "schedule": "0 * * * *"
+    }
+  ]
 }

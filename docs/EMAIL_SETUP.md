@@ -57,3 +57,7 @@ You should see:
 ```
 
 Then create/resend an invitation or verification email and check the recipient mailbox and provider logs.
+
+### Inbound SecureFile mailbox
+
+Set `INBOUND_EMAIL_SECRET` and configure the inbound mail provider to POST received mail to `/api/integrations/email/inbound` with the `x-inbound-email-secret` header. The endpoint accepts `to`, `from`, `subject`, and `text`/`body`. Messages sent to a registered SecureFile user's email are stored in that user's Inbox and create an in-app notification.

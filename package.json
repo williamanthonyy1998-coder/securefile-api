@@ -1,25 +1,25 @@
 {
-  "name": "securefile-sharing-software",
+  "name": "securefile-platform",
   "private": true,
   "scripts": {
-    "dev": "npm run db:generate && concurrently \"npm --prefix backend run dev\" \"npm --prefix frontend run dev\"",
-    "build": "npm run db:generate && npm --prefix backend run build && npm --prefix frontend run build",
+    "dev": "npm run db:generate && npm run db:sync && npm run db:backfill-personal && concurrently \"npm --prefix backend run dev\" \"npm --prefix frontend run dev\" \"npm --prefix website run dev\"",
+    "build": "npm run db:generate && npm --prefix backend run build && npm --prefix frontend run build && npm --prefix website run build",
     "start": "npm --prefix backend start",
-    "db:generate": "prisma generate --schema prisma/schema.prisma",
-    "db:migrate": "prisma migrate dev --schema prisma/schema.prisma",
+    "db:generate": "prisma generate --schema prisma/schema.prisma && npm --prefix backend exec prisma generate -- --schema prisma/schema.prisma",
+    "db:sync": "tsx scripts/safe-db-sync.ts",
+    "db:migrate:deploy": "prisma migrate deploy --schema prisma/schema.prisma",
+    "db:backfill-personal": "tsx scripts/backfill-personal-folders.ts",
     "db:seed": "tsx prisma/seed.ts",
-    "install:all": "npm install && npm --prefix backend install && npm --prefix frontend install",
-    "db:where": "node -e \"console.log(require.resolve(\"@prisma/client\"))\"",
-    "db:push": "prisma db push --schema prisma/schema.prisma",
-    "db:validate": "prisma validate --schema prisma/schema.prisma"
-  },
-  "devDependencies": {
-    "concurrently": "^9.1.2",
-    "prisma": "^6.13.0",
-    "tsx": "^4.20.3"
+    "install:all": "npm install && npm --prefix backend install && npm --prefix frontend install && npm --prefix website install"
   },
   "dependencies": {
     "@prisma/client": "^6.19.3",
     "bcryptjs": "^3.0.2"
-  }
+  },
+  "devDependencies": {
+    "prisma": "^6.19.3",
+    "tsx": "^4.20.3",
+    "concurrently": "^9.1.2"
+  },
+  "version": "1.0.0"
 }

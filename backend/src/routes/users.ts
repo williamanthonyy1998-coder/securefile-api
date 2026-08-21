@@ -1,11 +1,13 @@
+import type { Prisma } from '@prisma/client';
 import { Router } from 'express';
 import { db } from '../db';
 import { auth, AuthedRequest, role } from '../middleware/auth';
 import { activeSubscription } from '../middleware/subscription';
 import { randomToken, hashToken } from '../utils/security';
 import { notify } from '../services/notify';
-import { sendEmail } from '../services/email';
+import { sendUserEmail } from '../services/email';
 import { env } from '../config/env';
+import { z } from 'zod';
 
 const r = Router();
 
@@ -51,10 +53,14 @@ r.get('/meta', auth, role('COMPANY_ADMIN'), async (req: AuthedRequest, res, next
 r.post('/', auth, activeSubscription, role('COMPANY_ADMIN'), async (req: AuthedRequest, res, next) => {
   try {
     const companyId = req.user!.companyId!;
-    const { email, name, role: userRole = 'EMPLOYEE', personalFolderAllowed = true, folderIds = [] } = req.body;
-    if (!email || !name || !['EMPLOYEE', 'CLIENT'].includes(userRole)) {
-      return res.status(400).json({ error: 'Valid email, name and role are required' });
-    }
+    const input = z.object({
+      email: z.string().trim().email('Enter a valid email address').max(320),
+      name: z.string().trim().min(2, 'Name is required').max(120),
+      role: z.enum(['EMPLOYEE', 'CLIENT']).default('EMPLOYEE'),
+      folderIds: z.array(z.string()).optional().default([])
+    }).safeParse(req.body);
+    if (!input.success) return res.status(400).json({ error: input.error.issues[0]?.message || 'Valid email, name and role are required' });
+    const { email, name, role: userRole, folderIds } = input.data;
 
     const sub = await db.subscription.findUnique({ where: { companyId } });
     const count = await db.user.count({ where: { companyId } });
@@ -72,13 +78,11 @@ r.post('/', auth, activeSubscription, role('COMPANY_ADMIN'), async (req: AuthedR
         uniqueName: String(name).trim(),
         role: userRole,
         status: 'INVITED',
-        personalFolderAllowed: Boolean(personalFolderAllowed)
+        personalFolderAllowed: true
       }
     });
 
-    if (u.personalFolderAllowed) {
-      await db.folder.create({ data: { companyId, ownerId: u.id, name: 'Personal Folder' } });
-    }
+    await db.folder.create({ data: { companyId, ownerId: u.id, name: 'Personal Folder', isPersonal: true } });
 
     if (Array.isArray(folderIds)) {
       for (const folderId of folderIds) {
@@ -104,7 +108,7 @@ r.post('/', auth, activeSubscription, role('COMPANY_ADMIN'), async (req: AuthedR
 
     const url = `${env.APP_URL}/accept-invitation?token=${encodeURIComponent(token)}`;
     await notify(u.id, 'You were invited', 'You were invited to your SecureFile company workspace.', companyId);
-    await sendEmail(u.email, 'Your SecureFile invitation',
+    await sendUserEmail(u.email, 'Your SecureFile invitation',
       `<p>You have been invited to a SecureFile workspace.</p><p><a href="${url}">Accept invitation</a></p><p>This invitation expires in 72 hours.</p>`
     );
 
@@ -135,7 +139,7 @@ r.put('/:id/permissions', auth, activeSubscription, role('COMPANY_ADMIN'), async
     if (!user) return res.status(404).json({ error: 'User not found' });
 
     const folderPermissions = Array.isArray(req.body.folders) ? req.body.folders : [];
-    await db.$transaction(async tx => {
+    await db.$transaction(async (tx: Prisma.TransactionClient) => {
       await tx.share.deleteMany({ where: { companyId, recipientId: user.id, folderId: { not: null }, ownerId: req.user!.id } });
       for (const item of folderPermissions) {
         const folder = await tx.folder.findFirst({ where: { id: String(item.folderId), companyId } });
@@ -164,11 +168,11 @@ r.patch('/:id', auth, activeSubscription, role('COMPANY_ADMIN'), async (req: Aut
     const data: any = {};
     if (req.body.name !== undefined) data.uniqueName = String(req.body.name).trim();
     if (req.body.role !== undefined && ['EMPLOYEE', 'CLIENT'].includes(req.body.role)) data.role = req.body.role;
-    if (req.body.personalFolderAllowed !== undefined) data.personalFolderAllowed = Boolean(req.body.personalFolderAllowed);
+    data.personalFolderAllowed = true;
     const updated = await db.user.update({ where: { id: user.id }, data });
     if (data.personalFolderAllowed === true) {
-      const existing = await db.folder.findFirst({ where: { companyId: user.companyId!, ownerId: user.id, name: 'Personal Folder' } });
-      if (!existing) await db.folder.create({ data: { companyId: user.companyId!, ownerId: user.id, name: 'Personal Folder' } });
+      const existing = await db.folder.findFirst({ where: { companyId: user.companyId!, ownerId: user.id, isPersonal: true } });
+      if (!existing) await db.folder.create({ data: { companyId: user.companyId!, ownerId: user.id, name: 'Personal Folder', isPersonal: true } });
     }
     res.json(updated);
   } catch (e) { next(e); }
@@ -197,7 +201,7 @@ r.post('/:id/resend-invitation', auth, activeSubscription, role('COMPANY_ADMIN')
       data: { userId: u.id, tokenHash: hashToken(token), type: 'INVITATION', expiresAt: new Date(Date.now() + 72 * 3600 * 1000) }
     });
     const url = `${env.APP_URL}/accept-invitation?token=${encodeURIComponent(token)}`;
-    await sendEmail(u.email, 'Your SecureFile invitation', `<p><a href="${url}">Accept invitation</a></p><p>This invitation expires in 72 hours.</p>`);
+    await sendUserEmail(u.email, 'Your SecureFile invitation', `<p><a href="${url}">Accept invitation</a></p><p>This invitation expires in 72 hours.</p>`);
     res.json({ ok: true, invitationUrl: env.NODE_ENV === 'development' ? url : undefined });
   } catch (e) { next(e); }
 });

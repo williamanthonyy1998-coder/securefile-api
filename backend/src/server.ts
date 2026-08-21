@@ -19,9 +19,16 @@ import superAdmin from './routes/superAdmin';
 import publicRoutes from './routes/public';
 import search from './routes/search';
 import integrations from './routes/integrations';
+import trash from './routes/trash';
+import cron from './routes/cron';
+import fax from './routes/fax';
+import { taskAndTrashSweep } from './services/taskWorker';
+import { realtimeEvents } from './services/realtime';
 
 import { subscriptionSweep } from './services/subscriptionWorker';
 import { emailConfigured } from './services/email';
+import { faxConfigured } from './services/fax';
+import { remoteStorageConfigured } from './services/storage';
 
 const app = express();
 
@@ -97,12 +104,31 @@ app.use('/api/workspace', workspace);
 app.use('/api/subscriptions', subscriptions);
 app.use('/api/super-admin', superAdmin);
 app.use('/api/integrations', integrations);
+app.use('/api/trash', trash);
+app.use('/api/workspace/trash', trash);
+app.use('/api/cron', cron);
+app.use('/api/fax', fax);
+app.get('/api/realtime', realtimeEvents);
+
+app.get('/api/maintenance/sweep', async (req, res, next) => {
+  try {
+    const secret = process.env.CRON_SECRET;
+    if (secret && req.headers.authorization !== `Bearer ${secret}`) return res.status(401).json({ error: 'Unauthorized' });
+    await subscriptionSweep();
+    res.json({ ok: true });
+  } catch (e) { next(e); }
+});
 
 app.get('/healthz', (_req, res) => {
   res.json({
     ok: true,
     emailConfigured: emailConfigured(),
     emailProvider: env.EMAIL_PROVIDER,
+    stripeConfigured: Boolean(env.STRIPE_SECRET_KEY && env.STRIPE_WEBHOOK_SECRET),
+    faxConfigured: faxConfigured(),
+    faxWebhookConfigured: Boolean(env.PHAXIO_CALLBACK_URL && (env.PHAXIO_CALLBACK_TOKEN || env.FAX_WEBHOOK_SECRET)),
+    remoteStorageConfigured,
+    realtime: 'sse-with-db-polling',
   });
 });
 
@@ -113,7 +139,7 @@ if (process.env.VERCEL !== '1') {
     console.log(`SecureFile API listening on ${env.PORT}`);
   });
 
-  const runSweep = () => subscriptionSweep().catch(console.error);
+  const runSweep = () => Promise.all([subscriptionSweep(), taskAndTrashSweep()]).catch(console.error);
 
   runSweep();
 
