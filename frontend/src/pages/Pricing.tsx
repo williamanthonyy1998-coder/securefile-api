@@ -10,11 +10,82 @@ const ADDONS=[
   ['postal','Post-office Mailing',10]
 ] as const;
 
-const PLANS=[
-  {code:'STARTER',name:'Basic',tag:'Solo workspace',users:1,gb:5,addons:{preview:false,scanner:false,fax:false,reshare:false,rename:false,postal:false},desc:'A secure starting point for one Company Admin, with 5 GB included storage.',popular:false,includedGb:5,fixedMonthly:10,additionalUserMonthly:5},
-  {code:'BUSINESS',name:'Advanced',tag:'Most popular',users:1,gb:2,addons:{preview:true,scanner:true,fax:false,reshare:true,rename:true,postal:false},desc:'The balanced package for a growing team, with 2 GB included storage.',popular:true,includedGb:2,fixedMonthly:15,additionalUserMonthly:10},
-  {code:'PROFESSIONAL',name:'Premium',tag:'Full toolkit',users:1,gb:2,addons:{preview:true,scanner:true,fax:true,reshare:true,rename:true,postal:true},desc:'Everything enabled for teams that need the complete platform, with 2 GB included storage.',popular:false,includedGb:2,fixedMonthly:25,additionalUserMonthly:12}
-] as const;
+type Plan = {
+  code: string;
+  name: string;
+  tag: string;
+  users: number;
+  gb: number;
+  addons: Record<string, boolean>;
+  desc: string;
+  popular: boolean;
+  includedGb: number;
+  fixedMonthly: number;
+  additionalUserMonthly: number;
+};
+
+const PLANS: Plan[] = [
+  {
+    code: 'STARTER',
+    name: 'Basic',
+    tag: 'Solo workspace',
+    users: 1,
+    gb: 5,
+    addons: {
+      preview: false,
+      scanner: false,
+      fax: false,
+      reshare: false,
+      rename: false,
+      postal: false
+    },
+    desc: 'A secure starting point for one Company Admin, with 5 GB included storage.',
+    popular: false,
+    includedGb: 5,
+    fixedMonthly: 10,
+    additionalUserMonthly: 5
+  },
+  {
+    code: 'BUSINESS',
+    name: 'Advanced',
+    tag: 'Most popular',
+    users: 1,
+    gb: 2,
+    addons: {
+      preview: true,
+      scanner: true,
+      fax: false,
+      reshare: true,
+      rename: true,
+      postal: false
+    },
+    desc: 'The balanced package for a growing team, with 2 GB included storage.',
+    popular: true,
+    includedGb: 2,
+    fixedMonthly: 15,
+    additionalUserMonthly: 10
+  },
+  {
+    code: 'PROFESSIONAL',
+    name: 'Premium',
+    tag: 'Full toolkit',
+    users: 1,
+    gb: 2,
+    addons: {
+      preview: true,
+      scanner: true,
+      fax: true,
+      reshare: true,
+      rename: true,
+      postal: true
+    },
+    desc: 'Everything enabled for teams that need the complete platform, with 2 GB included storage.',
+    popular: false,
+    includedGb: 2,
+    fixedMonthly: 25,
+    additionalUserMonthly: 12
+  }
+];
 
 function quote(users:number,gb:number,months:number,addons:Record<string,boolean>,includedGb=0){
   const user=10+Math.max(0,users-1)*5;
