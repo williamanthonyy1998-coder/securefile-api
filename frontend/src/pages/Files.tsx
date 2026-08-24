@@ -229,7 +229,16 @@ export default function Files() {
       <div className="modal"><div className="modal-head"><div><p className="eyebrow">Sharing</p><h2>Share {(shareFile||shareFolder).name}</h2></div><button className="close-btn" onClick={()=>{setShareFile(null);setShareFolder(null)}}><X size={18}/></button></div>
         <label>Share type<select value={shareType} onChange={e=>setShareType(e.target.value)}><option value="INTERNAL">Internal company user</option><option value="PUBLIC">Public link</option></select></label>
         {shareType==='INTERNAL'&&<label>Recipient<select value={shareRecipient} onChange={e=>setShareRecipient(e.target.value)}><option value="">Choose a user</option>{users.filter(u=>u.id!==localStorage.getItem('sf_user_id')).map(u=><option key={u.id} value={u.id}>{u.uniqueName} — {u.email}</option>)}</select></label>}
-        <div className="modal-section">Permissions</div><div className="permission-checks" style={{paddingLeft:0}}>{(['view','download','upload','edit','delete',...(addons.reshare?['share']:[])] as const).map(k=><label className="tiny-check" key={k}><input type="checkbox" checked={!!sharePerms[k]} onChange={e=>setSharePerms({...sharePerms,[k]:e.target.checked})}/>{k}</label>)}</div>
+        <div className="modal-section">Permissions</div><div className="permission-checks" style={{paddingLeft:0}}>{(['view','download','upload','edit','delete',...(addons.reshare ? ['share'] : [])] as Array<keyof typeof sharePerms>).map(k => (
+  <label className="tiny-check" key={k}>
+    <input
+      type="checkbox"
+      checked={!!sharePerms[k]}
+      onChange={e => setSharePerms({...sharePerms, [k]: e.target.checked})}
+    />
+    {k}
+  </label>
+))}</div>
         {shareType==='PUBLIC'&&<><label>Password (optional)<input type="password" value={sharePassword} onChange={e=>setSharePassword(e.target.value)} placeholder="Protect this link"/></label><label>Expires (optional)<input type="datetime-local" value={shareExpiry} onChange={e=>setShareExpiry(e.target.value)}/></label></>}
         {publicToken&&<div className="success">Public token created. <button className="link-button" onClick={()=>navigator.clipboard.writeText(`${window.location.origin}/public-share/${publicToken}`)}><Copy size={14}/> Copy public link</button></div>}
         <div className="modal-actions"><button className="btn secondary" onClick={()=>setShareFile(null)}>Close</button><button className="btn" onClick={createShare}><Share2 size={15}/> Create share</button></div>
