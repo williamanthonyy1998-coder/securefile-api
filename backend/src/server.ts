@@ -119,7 +119,7 @@ app.get('/api/maintenance/sweep', async (req, res, next) => {
   } catch (e) { next(e); }
 });
 
-app.get('/healthz', (_req, res) => {
+app.get(['/healthz', '/api/healthz'], (_req, res) => {
   res.json({
     ok: true,
     emailConfigured: emailConfigured(),
