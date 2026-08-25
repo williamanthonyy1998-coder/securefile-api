@@ -48,28 +48,57 @@ app.use(
 
 app.use(compression());
 
-const allowed = env.CORS_ORIGINS
+// CORS
+// Keep the API usable from the production web app, local Vite development,
+// and any additional origins explicitly configured in CORS_ORIGINS.
+// IMPORTANT: never throw from the CORS origin callback for a browser
+// preflight request. Throwing here turns a normal OPTIONS request into a
+// 500 response and the browser reports it as "Failed to fetch".
+const configuredOrigins = env.CORS_ORIGINS
   .split(',')
-  .map((x) => x.trim())
+  .map((x) => x.trim().replace(/\/$/, ''))
   .filter(Boolean);
 
-app.use(
-  cors({
-    exposedHeaders: ['Content-Disposition'],
-    origin: (origin, cb) => {
-      if (
-        !origin ||
-        allowed.includes(origin) ||
-        env.NODE_ENV !== 'production'
-      ) {
-        return cb(null, true);
-      }
+const allowedOrigins = new Set([
+  ...configuredOrigins,
+  'https://securefile-api-lkxs.vercel.app',
+  'https://securefile-api.vercel.app',
+  'http://localhost:5173',
+  'http://127.0.0.1:5173',
+]);
 
-      cb(new Error('CORS blocked'));
-    },
-    credentials: true,
-  })
-);
+const corsOptions: cors.CorsOptions = {
+  exposedHeaders: ['Content-Disposition'],
+  credentials: true,
+  methods: ['GET', 'HEAD', 'POST', 'PUT', 'PATCH', 'DELETE', 'OPTIONS'],
+  allowedHeaders: ['Content-Type', 'Authorization', 'X-Requested-With'],
+  origin: (origin, cb) => {
+    // Non-browser requests (curl, server-to-server, health checks).
+    if (!origin) return cb(null, true);
+
+    const normalizedOrigin = origin.replace(/\/$/, '');
+
+    // Development is intentionally permissive.
+    if (env.NODE_ENV !== 'production') {
+      return cb(null, true);
+    }
+
+    // Production: allow only configured/known application origins.
+    if (allowedOrigins.has(normalizedOrigin)) {
+      return cb(null, true);
+    }
+
+    // Do NOT throw here. A rejected origin must not crash the serverless
+    // function. The browser will simply receive no CORS permission.
+    return cb(null, false);
+  },
+};
+
+app.use(cors(corsOptions));
+
+// Explicit preflight handling. This guarantees OPTIONS /api/* is answered
+// before auth/rate-limit/router middleware is evaluated.
+app.options(/.*/, cors(corsOptions));
 
 app.use(
   '/api/subscriptions/stripe-webhook',
