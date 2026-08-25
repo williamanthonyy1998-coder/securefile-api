@@ -36,7 +36,80 @@ r.post('/signup',async(req,res,next)=>{try{
 
 r.post('/verify-email',async(req,res,next)=>{try{const token=String(req.body.token||''); const row=await db.verificationToken.findFirst({where:{tokenHash:hashToken(token),type:'EMAIL_VERIFICATION',usedAt:null,expiresAt:{gt:new Date()}},include:{user:true}}); if(!row)return res.status(400).json({error:'Invalid or expired verification token'}); await db.$transaction([db.user.update({where:{id:row.userId},data:{emailVerifiedAt:new Date(),status:'ACTIVE'}}),db.verificationToken.update({where:{id:row.id},data:{usedAt:new Date()}})]); const companyId=row.user.companyId; const subscription=companyId?await db.subscription.findUnique({where:{companyId},select:{id:true}}):null; res.json({ok:true,companyId,subscriptionId:subscription?.id||null});}catch(e){next(e)}});
 
-r.post('/login',async(req,res)=>{const email=String(req.body.email||'').toLowerCase().trim(); const password=String(req.body.password||''); const u=await db.user.findUnique({where:{email}}); if(!u||!u.passwordHash||!(await verifyPassword(password,u.passwordHash)))return res.status(401).json({error:'Invalid email or password'}); if(!u.emailVerifiedAt)return res.status(403).json({error:'Please verify your email before logging in'}); if(u.status==='SUSPENDED')return res.status(403).json({error:'Account suspended'}); if(u.companyId){const subscription=await db.subscription.findUnique({where:{companyId:u.companyId},select:{status:true}});if(subscription?.status==='PENDING' && env.BILLING_MODE==='stripe')return res.status(402).json({error:'Payment is required before your workspace can be activated'});} const token=signAccess({id:u.id,role:u.role,companyId:u.companyId}); res.json({token,user:{id:u.id,email:u.email,name:u.uniqueName,role:u.role,companyId:u.companyId}})});
+r.post('/login', async (req, res, next) => {
+  try {
+    const email = String(req.body.email || '').toLowerCase().trim();
+    const password = String(req.body.password || '');
+
+    if (!email || !password) {
+      return res.status(400).json({
+        error: 'Email and password are required',
+      });
+    }
+
+    const u = await db.user.findUnique({
+      where: { email },
+    });
+
+    if (
+      !u ||
+      !u.passwordHash ||
+      !(await verifyPassword(password, u.passwordHash))
+    ) {
+      return res.status(401).json({
+        error: 'Invalid email or password',
+      });
+    }
+
+    if (!u.emailVerifiedAt) {
+      return res.status(403).json({
+        error: 'Please verify your email before logging in',
+      });
+    }
+
+    if (u.status === 'SUSPENDED') {
+      return res.status(403).json({
+        error: 'Account suspended',
+      });
+    }
+
+    if (u.companyId) {
+      const subscription = await db.subscription.findUnique({
+        where: { companyId: u.companyId },
+        select: { status: true },
+      });
+
+      if (
+        subscription?.status === 'PENDING' &&
+        env.BILLING_MODE === 'stripe'
+      ) {
+        return res.status(402).json({
+          error: 'Payment is required before your workspace can be activated',
+        });
+      }
+    }
+
+    const token = signAccess({
+      id: u.id,
+      role: u.role,
+      companyId: u.companyId,
+    });
+
+    return res.json({
+      token,
+      user: {
+        id: u.id,
+        email: u.email,
+        name: u.uniqueName,
+        role: u.role,
+        companyId: u.companyId,
+      },
+    });
+  } catch (error) {
+    console.error('LOGIN_ERROR:', error);
+    return next(error);
+  }
+});
 
 r.post('/forgot-password',async(req,res,next)=>{try{const email=String(req.body.email||'').toLowerCase().trim(); const u=await db.user.findUnique({where:{email}}); if(u){const token=randomToken(); await db.verificationToken.create({data:{userId:u.id,tokenHash:hashToken(token),type:'PASSWORD_RESET',expiresAt:new Date(Date.now()+30*60*1000)}}); await sendUserEmail(email,'SecureFile password reset',`<p><a href="${resetUrl(token)}">Reset your password</a></p><p>This link expires in 30 minutes.</p>`);} res.json({message:'If the email exists, a reset message has been sent.'});}catch(e){next(e)}});
 
