@@ -2,11 +2,12 @@
   "name": "securefile-api",
   "version": "1.0.0",
   "scripts": {
-    "dev": "prisma generate --schema prisma/schema.prisma && tsx watch src/server.ts",
-    "build": "prisma generate --schema prisma/schema.prisma && tsc",
-    "start": "node dist/server.js",
-    "migrate:deploy": "prisma migrate deploy --schema prisma/schema.prisma"
-  },
+  "dev": "prisma generate --schema prisma/schema.prisma && tsx watch src/server.ts",
+  "build": "prisma generate --schema prisma/schema.prisma && tsc",
+  "start": "node dist/server.js",
+  "migrate:deploy": "prisma migrate deploy --schema prisma/schema.prisma",
+  "postinstall": "prisma generate --schema prisma/schema.prisma"
+},
   "dependencies": {
     "@prisma/client": "^6.19.3",
     "bcryptjs": "^3.0.2",
