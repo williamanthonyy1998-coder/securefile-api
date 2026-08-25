@@ -8,6 +8,10 @@
   "migrate:deploy": "prisma migrate deploy --schema prisma/schema.prisma",
   "postinstall": "prisma generate --schema prisma/schema.prisma"
 },
+
+"engines": {
+    "node": "22.x"
+  },
   "dependencies": {
     "@prisma/client": "^6.19.3",
     "bcryptjs": "^3.0.2",

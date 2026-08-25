@@ -2,11 +2,7 @@
   "$schema": "https://openapi.vercel.sh/vercel.json",
   "version": 2,
   "buildCommand": "npm run build",
-  "functions": {
-    "api/[...path].ts": {
-      "runtime": "nodejs22.x"
-    }
-  },
+  "installCommand": "npm install",
   "crons": [
     {
       "path": "/api/maintenance/sweep",
