@@ -3,7 +3,7 @@
   "private": true,
   "scripts": {
     "dev": "npm run db:generate && npm run db:sync && npm run db:backfill-personal && concurrently \"npm --prefix backend run dev\" \"npm --prefix frontend run dev\" \"npm --prefix website run dev\"",
-    "build": "npm run db:generate && npm --prefix backend install && npm --prefix backend run build && npm --prefix frontend install && npm --prefix frontend run build && npm --prefix website install && npm --prefix website run build",
+    "build": "npm run db:generate && npm --prefix backend install --include=dev && npm --prefix backend run build && npm --prefix frontend install && npm --prefix frontend run build && npm --prefix website install && npm --prefix website run build",
     "start": "npm --prefix backend start",
     "db:generate": "prisma generate --schema prisma/schema.prisma && npm --prefix backend exec prisma generate -- --schema prisma/schema.prisma",
     "db:sync": "tsx scripts/safe-db-sync.ts",
