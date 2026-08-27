@@ -71,7 +71,12 @@ const corsOptions: cors.CorsOptions = {
   exposedHeaders: ['Content-Disposition'],
   credentials: true,
   methods: ['GET', 'HEAD', 'POST', 'PUT', 'PATCH', 'DELETE', 'OPTIONS'],
-  allowedHeaders: ['Content-Type', 'Authorization', 'X-Requested-With'],
+  allowedHeaders: [
+  'Content-Type',
+  'Authorization',
+  'X-Requested-With',
+  'X-Tenant-Slug',
+],
   origin: (origin, cb) => {
     // Non-browser requests (curl, server-to-server, health checks).
     if (!origin) return cb(null, true);
