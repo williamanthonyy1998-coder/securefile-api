@@ -120,7 +120,7 @@ export default function SuperAdmin() {
         <td><span className={`status-pill ${(c.subscription?.status||"none").toLowerCase()}`}>{c.subscription?.status || "Not billed"}</span></td>
         <td>
   <a
-    href={`https://${c.slug}.securefile.com`}
+    href={`/t/${encodeURIComponent(c.slug)}`}
     target="_blank"
     rel="noreferrer"
   >
