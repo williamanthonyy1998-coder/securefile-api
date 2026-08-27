@@ -1,4 +1,8 @@
-const API = import.meta.env.VITE_API_URL || (import.meta.env.PROD ? "/api" : "http://localhost:4000/api");
+const API =
+  import.meta.env.VITE_API_URL ||
+  (import.meta.env.PROD
+    ? "https://securefile-api.vercel.app/api"
+    : "http://localhost:4000/api");
 
 export function token() {
   return localStorage.getItem("sf_token") || "";
