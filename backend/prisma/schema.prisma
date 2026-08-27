@@ -372,7 +372,7 @@ model Notification {
   companyId String?
   userId String
 
-  type NotificationType
+  type NotificationType @default(SYSTEM)
   title String
   body String
 
