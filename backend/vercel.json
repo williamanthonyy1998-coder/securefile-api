@@ -1,9 +1,12 @@
 {
   "$schema": "https://openapi.vercel.sh/vercel.json",
-  "crons": [
+  "version": 2,
+  "buildCommand": "npm run build",
+  "outputDirectory": "dist",
+  "rewrites": [
     {
-      "path": "/api/maintenance/sweep",
-      "schedule": "0 3 * * *"
+      "source": "/api/(.*)",
+      "destination": "/api"
     }
   ]
 }

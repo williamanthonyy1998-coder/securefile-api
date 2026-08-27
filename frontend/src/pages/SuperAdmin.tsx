@@ -564,11 +564,12 @@ export default function SuperAdmin() {
                     </td>
                     <td>
                       <a
-                        href={`${window.location.protocol}//${c.slug}.${window.location.hostname.split(".").slice(-2).join(".")}:5173`}
+                        href={`${window.location.origin}/t/${encodeURIComponent(c.slug)}`}
                         target="_blank"
                         rel="noreferrer"
                       >
-                        {c.slug}.securefile.com <ExternalLink size={13} />
+                        {window.location.host}/t/{c.slug}
+                        <ExternalLink size={13} />
                       </a>
                     </td>
                     <td>
