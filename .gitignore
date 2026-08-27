@@ -15,3 +15,6 @@ dist/
 backend/storage/
 *.tsbuildinfo
 deploy/
+# Public frontend production API routing (contains no secrets)
+!frontend/.env.production
+!frontend/.env.production.example

@@ -238,47 +238,79 @@ r.post("/verify-email", async (req, res, next) => {
   }
 });
 
-r.post("/login", async (req, res) => {
-  const email = String(req.body.email || "")
-    .toLowerCase()
-    .trim();
-  const password = String(req.body.password || "");
-  const u = await db.user.findUnique({ where: { email } });
-  if (
-    !u ||
-    !u.passwordHash ||
-    !(await verifyPassword(password, u.passwordHash))
-  )
-    return res.status(401).json({ error: "Invalid email or password" });
-  if (!u.emailVerifiedAt)
-    return res
-      .status(403)
-      .json({ error: "Please verify your email before logging in" });
-  if (u.status === "SUSPENDED")
-    return res.status(403).json({ error: "Account suspended" });
-  if (u.companyId) {
-    const subscription = await db.subscription.findUnique({
-      where: { companyId: u.companyId },
-      select: { status: true },
+r.post('/login', async (req, res, next) => {
+  try {
+    const email = String(req.body.email || '').toLowerCase().trim();
+    const password = String(req.body.password || '');
+
+    if (!email || !password) {
+      return res.status(400).json({
+        error: 'Email and password are required',
+      });
+    }
+
+    const u = await db.user.findUnique({
+      where: { email },
     });
-    if (subscription?.status === "PENDING" && env.BILLING_MODE === "stripe")
-      return res
-        .status(402)
-        .json({
-          error: "Payment is required before your workspace can be activated",
+
+    if (
+      !u ||
+      !u.passwordHash ||
+      !(await verifyPassword(password, u.passwordHash))
+    ) {
+      return res.status(401).json({
+        error: 'Invalid email or password',
+      });
+    }
+
+    if (!u.emailVerifiedAt) {
+      return res.status(403).json({
+        error: 'Please verify your email before logging in',
+      });
+    }
+
+    if (u.status === 'SUSPENDED') {
+      return res.status(403).json({
+        error: 'Account suspended',
+      });
+    }
+
+    if (u.companyId) {
+      const subscription = await db.subscription.findUnique({
+        where: { companyId: u.companyId },
+        select: { status: true },
+      });
+
+      if (
+        subscription?.status === 'PENDING' &&
+        env.BILLING_MODE === 'stripe'
+      ) {
+        return res.status(402).json({
+          error: 'Payment is required before your workspace can be activated',
         });
-  }
-  const token = signAccess({ id: u.id, role: u.role, companyId: u.companyId });
-  res.json({
-    token,
-    user: {
+      }
+    }
+
+    const token = signAccess({
       id: u.id,
-      email: u.email,
-      name: u.uniqueName,
       role: u.role,
       companyId: u.companyId,
-    },
-  });
+    });
+
+    return res.json({
+      token,
+      user: {
+        id: u.id,
+        email: u.email,
+        name: u.uniqueName,
+        role: u.role,
+        companyId: u.companyId,
+      },
+    });
+  } catch (error) {
+    console.error('LOGIN_ERROR:', error);
+    return next(error);
+  }
 });
 
 r.post("/forgot-password", async (req, res, next) => {
