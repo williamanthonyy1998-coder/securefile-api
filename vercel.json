@@ -1,3 +1,10 @@
 {
-  "$schema": "https://openapi.vercel.sh/vercel.json"
+  "$schema": "https://openapi.vercel.sh/vercel.json",
+  "version": 2,
+  "buildCommand": "npm --prefix backend run build",
+  "functions": {
+    "backend/api/[...path].ts": {
+      "runtime": "nodejs24.x"
+    }
+  }
 }
