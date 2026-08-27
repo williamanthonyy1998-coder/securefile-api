@@ -118,7 +118,15 @@ export default function SuperAdmin() {
         <td>{c._count?.users ?? 0} / {c.subscription?.users ?? c._count?.users ?? 1}</td>
         <td>{c.storageLimitGb} GB</td>
         <td><span className={`status-pill ${(c.subscription?.status||"none").toLowerCase()}`}>{c.subscription?.status || "Not billed"}</span></td>
-        <td><a href={`${window.location.protocol}//${c.slug}.${window.location.hostname.split(".").slice(-2).join(".")}:5173`} target="_blank" rel="noreferrer">{c.slug}.securefile.com <ExternalLink size={13}/></a></td>
+        <td>
+  <a
+    href={`https://${c.slug}.securefile.com`}
+    target="_blank"
+    rel="noreferrer"
+  >
+    {c.slug}.securefile.com <ExternalLink size={13} />
+  </a>
+</td>
         <td><div className="row-actions"><button className="icon-btn" title="Edit" onClick={()=>openEdit(c)}><Edit3 size={15}/></button><button className="icon-btn danger" title="Delete" onClick={()=>remove(c)}><Trash2 size={15}/></button></div></td>
       </tr>)}</tbody></table></div>}
     </div>
