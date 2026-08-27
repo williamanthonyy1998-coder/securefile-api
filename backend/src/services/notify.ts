@@ -1,14 +1,25 @@
 import { db } from '../db';
 import { emitToUser } from './realtime';
+import { NotificationType } from '@prisma/client';
 
-export async function notify(userId: string, title: string, body: string, companyId?: string) {
+export async function notify(
+  userId: string,
+  title: string,
+  body: string,
+  companyId?: string,
+  type: NotificationType = NotificationType.SYSTEM
+) {
   const notification = await db.notification.create({
-    data: { userId, title, body, companyId },
+    data: {
+      userId,
+      title,
+      body,
+      companyId,
+      type,
+    },
   });
 
-  // Persist first, then push the exact database record to every active browser
-  // session for this user. If the user is offline, the record remains available
-  // through GET /workspace/notifications.
   emitToUser(userId, 'notification', notification);
+
   return notification;
 }
