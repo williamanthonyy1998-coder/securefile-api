@@ -49,7 +49,7 @@ npm run db:backfill-personal
 npm run dev
 ```
 
-Do not manually run a Prisma generate command against a different schema. The root `prisma/schema.prisma` is canonical.
+Do not manually run a Prisma generate command against a different schema. `backend/prisma/schema.prisma` is the canonical backend schema, and root DB commands delegate to backend scripts.
 
 ## Production maintenance
 Set `CRON_SECRET` in the deployment environment. The project includes `/api/cron/maintenance` and a Vercel hourly cron entry. Render/non-Vercel deployments also run the maintenance worker from the server process.

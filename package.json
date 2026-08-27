@@ -2,24 +2,19 @@
   "name": "securefile-platform",
   "private": true,
   "scripts": {
-    "dev": "npm run db:generate && npm run db:sync && npm run db:backfill-personal && concurrently \"npm --prefix backend run dev\" \"npm --prefix frontend run dev\" \"npm --prefix website run dev\"",
-    "build": "npm run db:generate && npm --prefix backend run build && npm --prefix frontend run build && npm --prefix website run build",
+    "dev": "npm --prefix backend run db:generate && npm --prefix backend run db:sync && npm --prefix backend run db:backfill-personal && concurrently \"npm --prefix backend run dev\" \"npm --prefix frontend run dev\" \"npm --prefix website run dev\"",
+    "build": "npm --prefix backend run db:generate && npm --prefix backend run build && npm --prefix frontend run build && npm --prefix website run build",
     "start": "npm --prefix backend start",
-    "db:generate": "prisma generate --schema prisma/schema.prisma && npm --prefix backend exec prisma generate -- --schema prisma/schema.prisma",
-    "db:sync": "tsx scripts/safe-db-sync.ts",
-    "db:migrate:deploy": "prisma migrate deploy --schema prisma/schema.prisma",
-    "db:backfill-personal": "tsx scripts/backfill-personal-folders.ts",
-    "db:seed": "tsx prisma/seed.ts",
+    "db:generate": "npm --prefix backend run db:generate",
+    "db:sync": "npm --prefix backend run db:sync",
+    "db:migrate:deploy": "npm --prefix backend run migrate:deploy",
+    "db:backfill-personal": "npm --prefix backend run db:backfill-personal",
+    "db:seed": "npm --prefix backend run db:seed",
+    "db:reset": "npm --prefix backend run db:reset",
     "install:all": "npm install && npm --prefix backend install && npm --prefix frontend install && npm --prefix website install"
   },
-  "dependencies": {
-    "@prisma/client": "^6.19.3",
-    "bcryptjs": "^3.0.2"
-  },
   "devDependencies": {
-    "concurrently": "^9.1.2",
-    "prisma": "^6.19.3",
-    "tsx": "^4.20.3"
+    "concurrently": "^9.1.2"
   },
   "version": "1.0.0"
 }

@@ -28,16 +28,15 @@ This package is based on the uploaded `securefile-production(3).zip` and include
 - Add-on selections are stored in the Subscription JSON field.
 
 ## Prisma / database
-- `Subscription.addons` exists in `prisma/schema.prisma`.
-- Root Prisma Client is the intended client; the project does not rely on a second generated client inside `backend/node_modules`.
-- `npm run db:generate` always targets the root schema.
-- `npm run db:migrate` is mapped to `prisma db push` because the uploaded source package did not contain its previous migration history. This prevents the missing-local-migration drift problem seen in the uploaded project.
-- `npm run db:validate` is available.
+- `Subscription.addons` exists in `backend/prisma/schema.prisma`.
+- Backend Prisma Client is the intended client; root DB commands delegate to backend scripts.
+- `npm run db:generate` targets the backend schema through `npm --prefix backend run db:generate`.
+- `npm run db:sync` runs the backend safe DB sync helper.
 
 ## Environment / seed
-- Root `.env` is the source of truth.
+- Backend Prisma files are the source of truth.
 - `.env.example` is included.
-- The seed script loads the root `.env` reliably and requires a 12+ character Super Admin password.
+- The seed script requires a 12+ character Super Admin password.
 - Real `.env` and `node_modules` are intentionally not included in the delivery archive.
 
 ## No Docker
