@@ -2,9 +2,14 @@
   "name": "securefile-api",
   "version": "1.0.0",
   "scripts": {
-    "dev": "prisma generate --schema prisma/schema.prisma && tsx watch src/server.ts",
-    "build": "prisma generate --schema prisma/schema.prisma && tsc",
+    "dev": "npm run db:generate && tsx watch src/server.ts",
+    "build": "npm run db:generate && tsc",
     "start": "node dist/server.js",
+    "db:generate": "prisma generate --schema prisma/schema.prisma",
+    "db:sync": "tsx scripts/safe-db-sync.ts",
+    "db:backfill-personal": "tsx scripts/backfill-personal-folders.ts",
+    "db:seed": "tsx prisma/seed.ts",
+    "db:reset": "prisma migrate reset --schema prisma/schema.prisma --force",
     "migrate:deploy": "prisma migrate deploy --schema prisma/schema.prisma"
   },
   "dependencies": {

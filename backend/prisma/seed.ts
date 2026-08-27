@@ -1,0 +1,4 @@
+import 'dotenv/config'; import {PrismaClient,Role,UserStatus} from '@prisma/client'; import bcrypt from 'bcryptjs';
+const db=new PrismaClient();
+async function main(){const email=process.env.SUPER_ADMIN_EMAIL;const password=process.env.SUPER_ADMIN_PASSWORD;if(!email||!password||password.length<12)throw new Error('Set SUPER_ADMIN_EMAIL and SUPER_ADMIN_PASSWORD (12+ chars) before seeding.');const hash=await bcrypt.hash(password,12);await db.user.upsert({where:{email:email.toLowerCase()},update:{passwordHash:hash,status:UserStatus.ACTIVE,role:Role.SUPER_ADMIN,emailVerifiedAt:new Date()},create:{email:email.toLowerCase(),uniqueName:'Super Admin',passwordHash:hash,status:UserStatus.ACTIVE,role:Role.SUPER_ADMIN,emailVerifiedAt:new Date()}});console.log(`Super Admin ready: ${email}`)}
+main().catch(e=>{console.error(e);process.exit(1)}).finally(()=>db.$disconnect());
