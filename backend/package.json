@@ -1,6 +1,7 @@
 {
   "name": "securefile-api",
   "version": "1.0.0",
+  "type": "module",
   "scripts": {
     "dev": "npm run db:generate && tsx watch src/server.ts",
     "build": "npm run db:generate && tsc",
