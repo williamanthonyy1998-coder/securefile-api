@@ -27,7 +27,9 @@ export async function notify(
       companyId,
       type,
       entityId: options.entityId,
-      metadata: options.metadata,
+      metadata: options.metadata
+  ? JSON.parse(JSON.stringify(options.metadata))
+  : undefined,
     },
   });
 
