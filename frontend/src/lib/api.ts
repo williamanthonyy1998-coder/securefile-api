@@ -42,10 +42,7 @@ export function token() {
   return localStorage.getItem("sf_token") || "";
 }
 
-function dispatchAlert(
-  type: "success" | "error" | "info",
-  message: string
-) {
+function dispatchAlert(type: "success" | "error" | "info", message: string) {
   if (typeof window !== "undefined" && message) {
     window.dispatchEvent(
       new CustomEvent("sf:alert", {
@@ -53,7 +50,7 @@ function dispatchAlert(
           type,
           message,
         },
-      })
+      }),
     );
   }
 }
@@ -163,7 +160,7 @@ export async function api(path: string, opts: RequestInit = {}) {
     if (!silentAlert) {
       dispatchAlert(
         "error",
-        data?.error || `Request failed (${response.status})`
+        data?.error || `Request failed (${response.status})`,
       );
     }
 
@@ -172,23 +169,18 @@ export async function api(path: string, opts: RequestInit = {}) {
       localStorage.removeItem("sf_role");
     }
 
-    throw new Error(
-      data?.error || `Request failed (${response.status})`
-    );
+    throw new Error(data?.error || `Request failed (${response.status})`);
   }
 
   const method = String(opts.method || "GET").toUpperCase();
 
-  if (
-    !silentAlert &&
-    !["GET", "HEAD", "OPTIONS"].includes(method) &&
-    !path.includes("/workspace/notifications")
-  ) {
-    dispatchAlert(
-      "success",
-      friendlySuccess(path, method, data)
-    );
-  }
+  // if (
+  //   !silentAlert &&
+  //   !["GET", "HEAD", "OPTIONS"].includes(method) &&
+  //   !path.includes("/workspace/notifications")
+  // ) {
+  //   dispatchAlert("success", friendlySuccess(path, method, data));
+  // }
 
   return data;
 }
@@ -204,7 +196,7 @@ export async function directUpload(
     folderId?: string;
     source?: "UPLOAD" | "SCAN" | "FAX";
     name?: string;
-  } = {}
+  } = {},
 ) {
   try {
     if (import.meta.env.VITE_DIRECT_UPLOAD !== "true") {
@@ -243,17 +235,14 @@ export async function directUpload(
     const put = await fetch(ticket.ticket.signedUrl, {
       method: "PUT",
       headers: {
-        "Content-Type":
-          file.type || "application/octet-stream",
+        "Content-Type": file.type || "application/octet-stream",
         "x-upsert": "false",
       },
       body: file,
     });
 
     if (!put.ok) {
-      throw new Error(
-        `Storage upload failed (${put.status}).`
-      );
+      throw new Error(`Storage upload failed (${put.status}).`);
     }
 
     const committed = await api("/files/commit-upload", {
@@ -271,17 +260,11 @@ export async function directUpload(
       }),
     });
 
-    dispatchAlert(
-      "success",
-      "File uploaded successfully."
-    );
+    dispatchAlert("success", "File uploaded successfully.");
 
     return committed;
   } catch (e: any) {
-    dispatchAlert(
-      "error",
-      e?.message || "File upload failed."
-    );
+    dispatchAlert("error", e?.message || "File upload failed.");
 
     throw e;
   }
@@ -292,12 +275,10 @@ export async function directUpload(
  */
 export async function getSignedFileUrl(
   fileId: string,
-  mode: "preview" | "download" = "preview"
+  mode: "preview" | "download" = "preview",
 ) {
   const data: any = await api(
-    `/files/${encodeURIComponent(
-      fileId
-    )}/signed-url?mode=${mode}`
+    `/files/${encodeURIComponent(fileId)}/signed-url?mode=${mode}`,
   );
 
   return String(data.url || "");
