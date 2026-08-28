@@ -1,0 +1,1 @@
+import {db} from '../db'; export async function audit(companyId:string|undefined,actorId:string|undefined,action:string,entity:string,entityId?:string,metadata?:any){await db.auditLog.create({data:{companyId,actorId,action,entity,entityId,metadata}})}

@@ -1,0 +1,1 @@
+Startup Prisma db push uses DIRECT_URL/session-mode Postgres. Runtime keeps DATABASE_URL/transaction pooler. No data-loss flags or reset are used.

@@ -1,0 +1,47 @@
+services:
+  - type: web
+    name: securefile-api
+    runtime: node
+    plan: free
+    rootDir: .
+    buildCommand: npm install && npm --prefix backend install && npm run db:generate && npm --prefix backend run build
+    startCommand: npm --prefix backend start
+    healthCheckPath: /healthz
+    envVars:
+      - key: NODE_ENV
+        value: production
+      - key: PORT
+        value: 10000
+      - key: DATABASE_URL
+        sync: false
+      - key: JWT_SECRET
+        generateValue: true
+      - key: APP_URL
+        sync: false
+      - key: PUBLIC_APP_DOMAIN
+        value: onrender.com
+      - key: CORS_ORIGINS
+        sync: false
+      - key: EMAIL_PROVIDER
+        value: resend
+      - key: EMAIL_FROM
+        sync: false
+      - key: RESEND_API_KEY
+        sync: false
+      - key: SUPABASE_URL
+        sync: false
+      - key: SUPABASE_SERVICE_ROLE_KEY
+        sync: false
+      - key: SUPABASE_STORAGE_BUCKET
+        value: securefile
+      - key: MAX_UPLOAD_MB
+        value: 50
+
+  - type: static
+    name: securefile-web
+    rootDir: .
+    buildCommand: npm --prefix frontend install && npm --prefix frontend run build
+    staticPublishPath: frontend/dist
+    envVars:
+      - key: VITE_API_URL
+        sync: false
