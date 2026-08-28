@@ -1,0 +1,707 @@
+import { Router } from "express";
+import multer from "multer";
+import crypto from "node:crypto";
+import { db } from "../db";
+import { auth, AuthedRequest } from "../middleware/auth";
+import { env } from "../config/env";
+import { audit } from "../services/audit";
+import {
+  getFileAccess,
+  getFolderAccess,
+  listVisibleFolderIds,
+} from "../services/access";
+import { safeFilename } from "../utils/security";
+import { jpegImagesToPdf } from "../utils/jpegPdf";
+import { notify, notifyCompanyAdmins } from "../services/notify";
+import { activeSubscription } from "../middleware/subscription";
+import { requireAddon } from "../services/entitlements";
+import {
+  putObject,
+  getObject,
+  deleteObject,
+  createSignedUploadUrl,
+  createSignedReadUrl,
+  remoteStorageConfigured,
+  objectExists,
+} from "../services/storage";
+import { isOpenXmlSpreadsheet, renderOpenXmlSpreadsheet } from "../services/spreadsheetPreview";
+const r = Router();
+const upload = multer({
+  storage: multer.memoryStorage(),
+  limits: { fileSize: env.MAX_UPLOAD_MB * 1024 * 1024 },
+});
+function publicMeta(f: any) {
+  return { ...f, sizeBytes: String(f.sizeBytes) };
+}
+async function assertStorage(companyId: string, additional: number) {
+  const c = await db.company.findUnique({
+    where: { id: companyId },
+    select: { storageLimitGb: true, storageUsedBytes: true },
+  });
+  if (!c) throw new Error("Company not found");
+  const limit = BigInt(Math.floor(c.storageLimitGb * 1024 * 1024 * 1024));
+  if (c.storageUsedBytes + BigInt(additional) > limit) {
+    const e = new Error("Storage limit exceeded");
+    (e as any).status = 413;
+    throw e;
+  }
+}
+function key() {
+  return crypto.randomUUID();
+}
+
+r.post(
+  "/upload-ticket",
+  auth,
+  activeSubscription,
+  async (req: AuthedRequest, res, next) => {
+    try {
+      if (!remoteStorageConfigured)
+        return res
+          .status(503)
+          .json({
+            error: "Direct uploads require Supabase Storage in production.",
+          });
+      if (!req.user?.companyId)
+        return res.status(400).json({ error: "Company required" });
+      const size = Number(req.body.size || 0);
+      const name = safeFilename(String(req.body.name || "file"));
+      const mimeType = String(
+        req.body.mimeType || "application/octet-stream",
+      ).slice(0, 160);
+      const folderId = req.body.folderId
+        ? String(req.body.folderId)
+        : undefined;
+      if (!Number.isFinite(size) || size <= 0)
+        return res
+          .status(400)
+          .json({ error: "A valid file size is required." });
+      if (size > env.MAX_UPLOAD_MB * 1024 * 1024)
+        return res
+          .status(413)
+          .json({
+            error: `File exceeds the ${env.MAX_UPLOAD_MB} MB SecureFile limit.`,
+          });
+      const cid = req.user.companyId;
+      if (
+        folderId &&
+        !(await getFolderAccess(
+          req.user!.id,
+          req.user!.role,
+          cid,
+          folderId,
+          "upload",
+        ))
+      )
+        return res
+          .status(403)
+          .json({ error: "Folder upload permission denied" });
+      await assertStorage(cid, size);
+      const storageKey = `uploads/${cid}/${req.user.id}/${crypto.randomUUID()}`;
+      const ticket = await createSignedUploadUrl(storageKey);
+      res.json({
+        ticket,
+        name,
+        mimeType,
+        sizeBytes: size,
+        folderId: folderId || null,
+        source: ["UPLOAD", "SCAN", "FAX"].includes(String(req.body.source))
+          ? String(req.body.source)
+          : "UPLOAD",
+      });
+    } catch (e) {
+      next(e);
+    }
+  },
+);
+
+r.post(
+  "/commit-upload",
+  auth,
+  activeSubscription,
+  async (req: AuthedRequest, res, next) => {
+    try {
+      if (!remoteStorageConfigured)
+        return res
+          .status(503)
+          .json({
+            error: "Direct uploads require Supabase Storage in production.",
+          });
+      const cid = req.user?.companyId;
+      if (!cid) return res.status(400).json({ error: "Company required" });
+      const storageKey = String(req.body.storageKey || "");
+      const prefix = `uploads/${cid}/${req.user!.id}/`;
+      if (!storageKey.startsWith(prefix))
+        return res.status(403).json({ error: "Invalid upload ticket." });
+      const name = safeFilename(String(req.body.name || "file"));
+      const mimeType = String(
+        req.body.mimeType || "application/octet-stream",
+      ).slice(0, 160);
+      const size = Number(req.body.sizeBytes || 0);
+      const folderId = req.body.folderId
+        ? String(req.body.folderId)
+        : undefined;
+      if (!Number.isFinite(size) || size <= 0)
+        return res.status(400).json({ error: "Invalid file size." });
+      if (
+        folderId &&
+        !(await getFolderAccess(
+          req.user!.id,
+          req.user!.role,
+          cid,
+          folderId,
+          "upload",
+        ))
+      )
+        return res
+          .status(403)
+          .json({ error: "Folder upload permission denied" });
+      await assertStorage(cid, size);
+      if (!(await objectExists(storageKey, size)))
+        return res
+          .status(400)
+          .json({ error: "Uploaded object was not found in storage." });
+      const source = ["UPLOAD", "SCAN", "FAX"].includes(String(req.body.source))
+        ? String(req.body.source)
+        : "UPLOAD";
+      const f = await db.file.create({
+        data: {
+          companyId: cid,
+          ownerId: req.user!.id,
+          folderId,
+          name,
+          storageKey,
+          mimeType,
+          sizeBytes: size,
+          checksum: req.body.checksum ? String(req.body.checksum) : null,
+          source: source as any,
+        },
+      });
+      await db.company.update({
+        where: { id: cid },
+        data: { storageUsedBytes: { increment: size } },
+      });
+      await audit(cid, req.user!.id, "UPLOAD", "FILE", f.id);
+      await notifyCompanyAdmins(
+        cid,
+        "New file uploaded",
+        `${name} was uploaded to SecureFile.`,
+        "FILE_UPLOADED",
+        { excludeUserId: req.user!.id, email: true, entityId: f.id },
+      );
+      res.status(201).json(publicMeta(f));
+    } catch (e) {
+      next(e);
+    }
+  },
+);
+
+r.get(
+  "/:id/signed-url",
+  auth,
+  activeSubscription,
+  async (req: AuthedRequest, res, next) => {
+    try {
+      const mode = String(req.query.mode || "preview");
+      if (mode !== "preview" && mode !== "download")
+        return res.status(400).json({ error: "Invalid signed URL mode." });
+      if (mode === "preview")
+        await requireAddon(req.user!.companyId!, "preview");
+      const f = await getFileAccess(
+        req.user!.id,
+        req.user!.role,
+        req.user!.companyId!,
+        String(req.params.id),
+        mode === "download" ? "download" : "view",
+      );
+      if (!f)
+        return res
+          .status(403)
+          .json({
+            error: `${mode === "download" ? "Download" : "View"} permission denied`,
+          });
+      const signed = await createSignedReadUrl(
+        f.storageKey,
+        mode === "download" ? f.name : undefined,
+      );
+      res.json({
+        url: signed.signedUrl,
+        expiresIn: signed.expiresIn,
+        mimeType: f.mimeType,
+        name: f.name,
+      });
+    } catch (e) {
+      next(e);
+    }
+  },
+);
+
+r.get("/", auth, async (req: AuthedRequest, res, next) => {
+  try {
+    const cid = req.user!.companyId;
+    if (!cid) return res.status(400).json({ error: "No company" });
+    const q = String(req.query.q || "");
+    const folderId = req.query.folderId
+      ? String(req.query.folderId)
+      : undefined;
+    const sourceFilter = ["UPLOAD", "SCAN", "FAX"].includes(
+      String(req.query.source),
+    )
+      ? String(req.query.source)
+      : undefined;
+    const visible = await listVisibleFolderIds(
+      req.user!.id,
+      req.user!.role,
+      cid,
+    );
+    if (
+      folderId &&
+      !(await getFolderAccess(
+        req.user!.id,
+        req.user!.role,
+        cid,
+        folderId,
+        "view",
+      ))
+    )
+      return res.status(403).json({ error: "Folder view permission denied" });
+    const files = await db.file.findMany({
+      where: {
+        companyId: cid,
+        deletedAt: null,
+        name: { contains: q, mode: "insensitive" },
+        ...(sourceFilter ? { source: sourceFilter as any } : {}),
+        ...(folderId
+          ? { folderId }
+          : { OR: [{ ownerId: req.user!.id }, { folderId: { in: visible } }] }),
+        NOT: { folder: { isPersonal: true, ownerId: { not: req.user!.id } } },
+      },
+      orderBy: { createdAt: "desc" },
+      take: 100,
+      include: {
+        folder: { select: { id: true, name: true, isPersonal: true } },
+      },
+    });
+    res.json(files.map(publicMeta));
+  } catch (e) {
+    next(e);
+  }
+});
+
+async function saveUpload(reqFile: Express.Multer.File, keyName: string) {
+  await putObject(
+    keyName,
+    reqFile.buffer,
+    reqFile.mimetype || "application/octet-stream",
+  );
+}
+
+r.post(
+  "/upload",
+  auth,
+  activeSubscription,
+  upload.single("file"),
+  async (req: AuthedRequest, res, next) => {
+    try {
+      if (!req.file || !req.user?.companyId)
+        return res.status(400).json({ error: "File and tenant required" });
+      const cid = req.user.companyId;
+      const folderId = req.body.folderId || undefined;
+      if (
+        folderId &&
+        !(await getFolderAccess(
+          req.user!.id,
+          req.user!.role,
+          cid,
+          folderId,
+          "upload",
+        ))
+      )
+        return res.status(403).json({ error: "Upload permission denied" });
+      await assertStorage(cid, req.file.size);
+      const original = safeFilename(req.file.originalname);
+      const storageKey = key();
+      const checksum = crypto
+        .createHash("sha256")
+        .update(req.file.buffer)
+        .digest("hex");
+      await saveUpload(req.file, storageKey);
+      try {
+        const source = ["UPLOAD", "SCAN", "FAX"].includes(
+          String(req.body.source),
+        )
+          ? String(req.body.source)
+          : "UPLOAD";
+        const f = await db.file.create({
+          data: {
+            companyId: cid,
+            ownerId: req.user.id,
+            folderId,
+            name: original,
+            storageKey,
+            mimeType: req.file.mimetype,
+            sizeBytes: req.file.size,
+            checksum,
+            source: source as any,
+          },
+        });
+        await db.company.update({
+          where: { id: cid },
+          data: { storageUsedBytes: { increment: req.file.size } },
+        });
+        await audit(cid, req.user.id, "UPLOAD", "FILE", f.id);
+        await notifyCompanyAdmins(
+          cid,
+          "New file uploaded",
+          `${original} was uploaded to SecureFile.`,
+          "FILE_UPLOADED",
+          { excludeUserId: req.user!.id, email: true, entityId: f.id },
+        );
+        res.status(201).json(publicMeta(f));
+      } catch (e) {
+        await deleteObject(storageKey);
+        throw e;
+      }
+    } catch (e) {
+      next(e);
+    }
+  },
+);
+
+r.get("/:id", auth, async (req: AuthedRequest, res, next) => {
+  try {
+    const f = await getFileAccess(
+      req.user!.id,
+      req.user!.role,
+      req.user!.companyId!,
+      String(req.params.id),
+      "view",
+    );
+    if (!f) return res.status(403).json({ error: "View permission denied" });
+    res.json(publicMeta(f));
+  } catch (e) {
+    next(e);
+  }
+});
+r.get(
+  "/:id/download",
+  auth,
+  activeSubscription,
+  async (req: AuthedRequest, res, next) => {
+    try {
+      const f = await getFileAccess(
+        req.user!.id,
+        req.user!.role,
+        req.user!.companyId!,
+        String(req.params.id),
+        "download",
+      );
+      if (!f)
+        return res.status(403).json({ error: "Download permission denied" });
+      const data = await getObject(f.storageKey);
+      if (!data) return res.status(404).json({ error: "Stored file missing" });
+      const safe = safeFilename(f.name);
+      res.setHeader("Content-Type", f.mimeType || "application/octet-stream");
+      res.setHeader(
+        "Content-Disposition",
+        `attachment; filename="${safe.replace(/"/g, "")}"; filename*=UTF-8''${encodeURIComponent(f.name)}`,
+      );
+      res.send(data);
+    } catch (e) {
+      next(e);
+    }
+  },
+);
+r.get(
+  "/:id/preview",
+  auth,
+  activeSubscription,
+  async (req: AuthedRequest, res, next) => {
+    try {
+      await requireAddon(req.user!.companyId!, "preview");
+      const f = await getFileAccess(
+        req.user!.id,
+        req.user!.role,
+        req.user!.companyId!,
+        String(req.params.id),
+        "view",
+      );
+      if (!f) return res.status(403).json({ error: "View permission denied" });
+      const data = await getObject(f.storageKey);
+      if (!data) return res.status(404).json({ error: "Stored file missing" });
+      if (isOpenXmlSpreadsheet(f.mimeType || "", f.name)) {
+        res.setHeader("Content-Type", "text/html; charset=utf-8");
+        res.setHeader("Content-Disposition", "inline");
+        return res.send(renderOpenXmlSpreadsheet(data, f.name));
+      }
+      res.type(f.mimeType || "application/octet-stream");
+      res.setHeader("Content-Disposition", "inline");
+      res.send(data);
+    } catch (e) {
+      next(e);
+    }
+  },
+);
+r.patch(
+  "/:id",
+  auth,
+  activeSubscription,
+  async (req: AuthedRequest, res, next) => {
+    try {
+      const f = await getFileAccess(
+        req.user!.id,
+        req.user!.role,
+        req.user!.companyId!,
+        String(req.params.id),
+        "edit",
+      );
+      if (!f) return res.status(403).json({ error: "Edit permission denied" });
+      if (
+        req.body.name !== undefined &&
+        f.ownerId !== req.user!.id &&
+        req.user!.role !== "COMPANY_ADMIN" &&
+        req.user!.role !== "SUPER_ADMIN"
+      )
+        await requireAddon(req.user!.companyId!, "rename");
+      const name = req.body.name ? safeFilename(String(req.body.name)) : f.name;
+      const folderId =
+        req.body.folderId === null ? null : req.body.folderId || f.folderId;
+      if (
+        folderId &&
+        !(await getFolderAccess(
+          req.user!.id,
+          req.user!.role,
+          req.user!.companyId!,
+          folderId,
+          "upload",
+        ))
+      )
+        return res.status(403).json({ error: "Folder permission denied" });
+      const updated = await db.file.update({
+        where: { id: f.id },
+        data: { name, folderId },
+      });
+      const changed = name !== f.name || folderId !== f.folderId;
+      if (changed) {
+        await notify(f.ownerId, 'File updated', `${f.name} was renamed or moved.`, f.companyId, 'FILE_UPDATED', false, { entityId: f.id });
+        await notifyCompanyAdmins(f.companyId, 'File updated', `${f.name} was renamed or moved by ${req.user!.email || 'a user'}.`, 'FILE_UPDATED', { excludeUserId: req.user!.id, entityId: f.id });
+      }
+      res.json(publicMeta(updated));
+    } catch (e) {
+      next(e);
+    }
+  },
+);
+r.delete(
+  "/:id",
+  auth,
+  activeSubscription,
+  async (req: AuthedRequest, res, next) => {
+    try {
+      const f = await getFileAccess(
+        req.user!.id,
+        req.user!.role,
+        req.user!.companyId!,
+        String(req.params.id),
+        "delete",
+      );
+      if (!f)
+        return res.status(403).json({ error: "Delete permission denied" });
+      await db.file.update({
+        where: { id: f.id },
+        data: { deletedAt: new Date() },
+      });
+      await audit(f.companyId, req.user!.id, "TRASH", "FILE", f.id);
+      await notify(f.ownerId, 'File moved to trash', `${f.name} was moved to Trash.`, f.companyId, 'FILE_DELETED', true, { entityId: f.id });
+      await notifyCompanyAdmins(f.companyId, 'File moved to trash', `${f.name} was moved to Trash by ${req.user!.email || 'a user'}.`, 'FILE_DELETED', { excludeUserId: req.user!.id, entityId: f.id });
+      res.status(204).end();
+    } catch (e) {
+      next(e);
+    }
+  },
+);
+
+r.post(
+  "/scan-pages",
+  auth,
+  activeSubscription,
+  upload.array("pages", 100),
+  async (req: AuthedRequest, res, next) => {
+    try {
+      await requireAddon(req.user!.companyId!, "scanner");
+      const files = (req.files as Express.Multer.File[]) || [];
+      if (!files.length)
+        return res
+          .status(400)
+          .json({ error: "At least one scanned page is required" });
+      const invalid = files.find(
+        (f) =>
+          !["image/jpeg", "image/jpg"].includes(
+            (f.mimetype || "").toLowerCase(),
+          ),
+      );
+      if (invalid)
+        return res
+          .status(400)
+          .json({ error: "Scanner pages must be JPEG images" });
+      const cid = req.user!.companyId!;
+      const folderId = req.body.folderId
+        ? String(req.body.folderId)
+        : undefined;
+      if (
+        folderId &&
+        !(await getFolderAccess(
+          req.user!.id,
+          req.user!.role,
+          cid,
+          folderId,
+          "upload",
+        ))
+      )
+        return res
+          .status(403)
+          .json({ error: "Folder upload permission denied" });
+      const pdf = jpegImagesToPdf(files.map((f) => f.buffer));
+      await assertStorage(cid, pdf.length);
+      const storageKey = `scan-${key()}`;
+      await putObject(storageKey, pdf, "application/pdf");
+      const name = safeFilename(
+        String(req.body.name || "Scanned Document.pdf")
+          .toLowerCase()
+          .endsWith(".pdf")
+          ? String(req.body.name || "Scanned Document.pdf")
+          : `${String(req.body.name || "Scanned Document")}.pdf`,
+      );
+      try {
+        const f = await db.file.create({
+          data: {
+            companyId: cid,
+            ownerId: req.user!.id,
+            folderId,
+            name,
+            storageKey,
+            mimeType: "application/pdf",
+            sizeBytes: pdf.length,
+            source: "SCAN",
+          },
+        });
+        await db.company.update({
+          where: { id: cid },
+          data: { storageUsedBytes: { increment: pdf.length } },
+        });
+        await notifyCompanyAdmins(
+          cid,
+          "New scanned PDF",
+          `${name} was saved from ${files.length} scanned page${files.length === 1 ? "" : "s"}.`,
+          "SYSTEM",
+          { excludeUserId: req.user!.id, email: true, entityId: f.id },
+        );
+        res.status(201).json(publicMeta(f));
+      } catch (e) {
+        await deleteObject(storageKey);
+        throw e;
+      }
+    } catch (e) {
+      next(e);
+    }
+  },
+);
+
+r.post(
+  "/scan",
+  auth,
+  activeSubscription,
+  upload.single("file"),
+  async (req: AuthedRequest, res, next) => {
+    try {
+      await requireAddon(req.user!.companyId!, "scanner");
+      if (!req.file)
+        return res.status(400).json({ error: "PDF scan file required" });
+      if (req.file.mimetype !== "application/pdf")
+        return res.status(400).json({ error: "Scanned document must be PDF" });
+      const cid = req.user!.companyId!;
+      const folderId = req.body.folderId
+        ? String(req.body.folderId)
+        : undefined;
+      if (
+        folderId &&
+        !(await getFolderAccess(
+          req.user!.id,
+          req.user!.role,
+          cid,
+          folderId,
+          "upload",
+        ))
+      )
+        return res
+          .status(403)
+          .json({ error: "Folder upload permission denied" });
+      await assertStorage(cid, req.file.size);
+      const storageKey = `scan-${key()}`;
+      await saveUpload(req.file, storageKey);
+      const f = await db.file.create({
+        data: {
+          companyId: cid,
+          ownerId: req.user!.id,
+          folderId,
+          name: safeFilename(req.file.originalname),
+          storageKey,
+          mimeType: "application/pdf",
+          sizeBytes: req.file.size,
+          source: "SCAN",
+        },
+      });
+      await db.company.update({
+        where: { id: cid },
+        data: { storageUsedBytes: { increment: req.file.size } },
+      });
+      await notifyCompanyAdmins(
+        cid,
+        "New scanned PDF",
+        `${f.name} was saved from the scanner.`,
+        "SYSTEM",
+        { excludeUserId: req.user!.id, email: true, entityId: f.id },
+      );
+      res.status(201).json(publicMeta(f));
+    } catch (e) {
+      next(e);
+    }
+  },
+);
+r.post(
+  "/fax",
+  auth,
+  activeSubscription,
+  upload.single("file"),
+  async (req: AuthedRequest, res, next) => {
+    try {
+      await requireAddon(req.user!.companyId!, "fax");
+      if (!req.file)
+        return res.status(400).json({ error: "Fax document required" });
+      const cid = req.user!.companyId!;
+      await assertStorage(cid, req.file.size);
+      const storageKey = `fax-${key()}`;
+      await saveUpload(req.file, storageKey);
+      const f = await db.file.create({
+        data: {
+          companyId: cid,
+          ownerId: req.user!.id,
+          name: safeFilename(req.file.originalname),
+          storageKey,
+          mimeType: req.file.mimetype,
+          sizeBytes: req.file.size,
+          source: "FAX",
+        },
+      });
+      await db.company.update({
+        where: { id: cid },
+        data: { storageUsedBytes: { increment: req.file.size } },
+      });
+      await notifyCompanyAdmins(cid, 'Fax document saved', `${f.name} was saved as a fax document.`, 'FAX_RECEIVED', { excludeUserId: req.user!.id, entityId: f.id });
+      res.status(201).json(publicMeta(f));
+    } catch (e) {
+      next(e);
+    }
+  },
+);
+export default r;
