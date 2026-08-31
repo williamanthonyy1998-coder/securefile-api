@@ -1,7 +1,7 @@
 import { db } from '../db';
 import { emitToUser } from './realtime';
 import { sendUserEmail, emailTemplate } from './email';
-import { NotificationType } from '@prisma/client';
+import { NotificationType, Prisma } from '@prisma/client';
 
 export type NotifyOptions = {
   email?: boolean;
