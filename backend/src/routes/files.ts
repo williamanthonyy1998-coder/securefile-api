@@ -483,9 +483,29 @@ r.patch(
       });
       const changed = name !== f.name || folderId !== f.folderId;
       if (changed) {
-        await notify(f.ownerId, 'File updated', `${f.name} was renamed or moved.`, f.companyId, 'FILE_UPDATED', false, { entityId: f.id });
-        await notifyCompanyAdmins(f.companyId, 'File updated', `${f.name} was renamed or moved by ${req.user!.email || 'a user'}.`, 'FILE_UPDATED', { excludeUserId: req.user!.id, entityId: f.id });
-      }
+  if (f.ownerId) {
+    await notify(
+      f.ownerId,
+      'File updated',
+      `${f.name} was renamed or moved.`,
+      f.companyId,
+      'FILE_UPDATED',
+      false,
+      { entityId: f.id }
+    );
+  }
+
+  await notifyCompanyAdmins(
+    f.companyId,
+    'File updated',
+    `${f.name} was renamed or moved by ${req.user!.email || 'a user'}.`,
+    'FILE_UPDATED',
+    {
+      excludeUserId: req.user!.id,
+      entityId: f.id
+    }
+  );
+}
       res.json(publicMeta(updated));
     } catch (e) {
       next(e);
@@ -505,15 +525,40 @@ r.delete(
         String(req.params.id),
         "delete",
       );
+
       if (!f)
         return res.status(403).json({ error: "Delete permission denied" });
+
       await db.file.update({
         where: { id: f.id },
         data: { deletedAt: new Date() },
       });
+
       await audit(f.companyId, req.user!.id, "TRASH", "FILE", f.id);
-      await notify(f.ownerId, 'File moved to trash', `${f.name} was moved to Trash.`, f.companyId, 'FILE_DELETED', true, { entityId: f.id });
-      await notifyCompanyAdmins(f.companyId, 'File moved to trash', `${f.name} was moved to Trash by ${req.user!.email || 'a user'}.`, 'FILE_DELETED', { excludeUserId: req.user!.id, entityId: f.id });
+
+      if (f.ownerId) {
+        await notify(
+          f.ownerId,
+          "File moved to trash",
+          `${f.name} was moved to Trash.`,
+          f.companyId,
+          "FILE_DELETED",
+          true,
+          { entityId: f.id },
+        );
+      }
+
+      await notifyCompanyAdmins(
+        f.companyId,
+        "File moved to trash",
+        `${f.name} was moved to Trash by ${req.user!.email || "a user"}.`,
+        "FILE_DELETED",
+        {
+          excludeUserId: req.user!.id,
+          entityId: f.id,
+        },
+      );
+
       res.status(204).end();
     } catch (e) {
       next(e);
