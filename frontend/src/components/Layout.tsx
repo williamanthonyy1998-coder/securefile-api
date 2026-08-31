@@ -129,9 +129,7 @@ export default function Layout({ children }: { children: any }) {
       window.removeEventListener("sf:alert", onAlert as EventListener);
   }, []);
 
-  /*
-  // Notifications realtime logic intentionally kept commented
-  // exactly as in the original implementation.
+  
 
   useEffect(() => {
     if (isSuper || !token()) return;
@@ -232,7 +230,7 @@ export default function Layout({ children }: { children: any }) {
       window.clearInterval(poll);
     };
   }, [isSuper]);
-  */
+
 
   const unreadCount = useMemo(
     () => notifications.filter((n) => !n.readAt).length,
