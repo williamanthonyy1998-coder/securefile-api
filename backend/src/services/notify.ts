@@ -28,7 +28,7 @@ export async function notify(
       type,
       entityId: options.entityId,
       metadata: options.metadata
-  ? JSON.parse(JSON.stringify(options.metadata))
+  ? (options.metadata as Prisma.InputJsonValue)
   : undefined,
     },
   });
