@@ -37,6 +37,25 @@ import { remoteStorageConfigured } from "./services/storage";
 import { createSocketServer } from "./sockets/socket.server";
 
 const app = express();
+// Browser-side SecureFile caching is explicit; disable Express ETag negotiation so
+// normal API calls do not turn into slow conditional 304 round-trips.
+app.disable('etag');
+
+// Lightweight server-side timing for logs.
+// Do not mutate response headers from the `finish` event: headers have
+// already been sent at that point and Node would throw ERR_HTTP_HEADERS_SENT.
+app.use((req, res, next) => {
+  const started = process.hrtime.bigint();
+
+  res.on('finish', () => {
+    const ms = Number(process.hrtime.bigint() - started) / 1e6;
+    if (ms >= 250) {
+      console.warn(`[slow-api] ${req.method} ${req.originalUrl} ${res.statusCode} ${ms.toFixed(1)}ms`);
+    }
+  });
+
+  next();
+});
 
 app.set("trust proxy", 1);
 

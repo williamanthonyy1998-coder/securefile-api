@@ -153,6 +153,7 @@ model Folder {
 
   @@index([companyId, parentId])
   @@index([companyId, ownerId, isPersonal])
+  @@index([companyId, deletedAt, createdAt])
 }
 
 model File {
@@ -181,6 +182,7 @@ model File {
 
   @@index([companyId, name])
   @@index([companyId, folderId])
+  @@index([companyId, deletedAt, createdAt])
 }
 
 model FileVersion {
@@ -220,6 +222,8 @@ model Share {
   @@index([companyId, recipientId])
   @@index([companyId, fileId])
   @@index([companyId, folderId])
+  @@index([companyId, recipientId, fileId, expiresAt])
+  @@index([companyId, recipientId, folderId, expiresAt])
 }
 
 model AccessRequest {

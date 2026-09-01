@@ -249,11 +249,9 @@ r.get("/", auth, async (req: AuthedRequest, res, next) => {
     )
       ? String(req.query.source)
       : undefined;
-    const visible = await listVisibleFolderIds(
-      req.user!.id,
-      req.user!.role,
-      cid,
-    );
+    const visible = req.user!.role === 'COMPANY_ADMIN' || req.user!.role === 'SUPER_ADMIN'
+      ? []
+      : await listVisibleFolderIds(req.user!.id, req.user!.role, cid);
     if (
       folderId &&
       !(await getFolderAccess(
@@ -273,7 +271,9 @@ r.get("/", auth, async (req: AuthedRequest, res, next) => {
         ...(sourceFilter ? { source: sourceFilter as any } : {}),
         ...(folderId
           ? { folderId }
-          : { OR: [{ ownerId: req.user!.id }, { folderId: { in: visible } }] }),
+          : (req.user!.role === 'COMPANY_ADMIN' || req.user!.role === 'SUPER_ADMIN')
+            ? { folder: { isPersonal: false } }
+            : { OR: [{ ownerId: req.user!.id }, { folderId: { in: visible } }] }),
         NOT: { folder: { isPersonal: true, ownerId: { not: req.user!.id } } },
       },
       orderBy: { createdAt: "desc" },
@@ -282,6 +282,7 @@ r.get("/", auth, async (req: AuthedRequest, res, next) => {
         folder: { select: { id: true, name: true, isPersonal: true } },
       },
     });
+    res.setHeader("Cache-Control", "private, no-store");
     res.json(files.map(publicMeta));
   } catch (e) {
     next(e);
