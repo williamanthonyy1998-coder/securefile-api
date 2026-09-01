@@ -2510,3 +2510,25 @@ td {
 .ai-sources span { font-weight:700; width:100%; }
 .ai-sources a { color:#2463eb; max-width:520px; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
 @media(max-width:700px){ .ai-head { flex-direction:column; } .ai-web-toggle { white-space:normal; } .ai-message { max-width:94%; } .ai-composer { flex-direction:column; align-items:stretch; } .ai-composer .btn { width:100%; } }
+
+/* SecureFile chat realtime status / WhatsApp-style delivery receipts */
+.chat-nav-highlight { position: relative; }
+.chat-nav-highlight::after { content: ""; width: 7px; height: 7px; border-radius: 50%; background: #2563eb; margin-left: auto; box-shadow: 0 0 0 3px rgba(37,99,235,.12); }
+.presence-dot { display:inline-block; width:8px; height:8px; border-radius:50%; flex:0 0 auto; background:#9ca3af; }
+.presence-dot.online { background:#16a34a; box-shadow:0 0 0 3px rgba(22,163,74,.12); }
+.presence-dot.offline { background:#9ca3af; }
+.chat-person-copy { display:flex; flex-direction:column; min-width:0; flex:1; }
+.chat-person-copy b, .chat-person-copy small { overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
+.chat-status { display:inline-flex; align-items:center; gap:6px; font-size:12px; margin-top:2px; }
+.chat-status.online { color:#15803d; }
+.chat-status.offline { color:#6b7280; }
+.typing-indicator { display:block; margin-top:4px; color:#2563eb; font-size:12px; font-weight:600; }
+.chat-conversation-head { display:flex; align-items:flex-start; justify-content:space-between; gap:12px; padding-bottom:10px; border-bottom:1px solid #e5e7eb; }
+.message-checks { margin-left:6px; font-weight:700; letter-spacing:-2px; }
+.message-checks.sent { color:#9ca3af; letter-spacing:0; }
+.message-checks.delivered { color:#6b7280; }
+.message-checks.read { color:#2563eb; }
+@media (max-width: 700px) {
+  .chat-conversation-head { gap:8px; }
+  .chat-person-copy small { max-width:190px; }
+}

@@ -91,12 +91,70 @@ r.patch('/tasks/:id/status',auth,activeSubscription,async(req:AuthedRequest,res,
 
 r.post('/tasks/:id/solution',auth,activeSubscription,taskUpload.single('file'),async(req:AuthedRequest,res,next)=>{try{const task=await db.task.findFirst({where:{id:String(req.params.id),companyId:req.user!.companyId!,deletedAt:null}});if(!task)return res.status(404).json({error:'Task not found'});if(task.assigneeId!==req.user!.id)return res.status(403).json({error:'Only the assignee can submit a solution'});if(!req.file)return res.status(400).json({error:'Solution file required'});const key=`solution-${crypto.randomUUID()}${path.extname(req.file.originalname)}`;await putObject(key,req.file.buffer,req.file.mimetype||'application/octet-stream');const f=await db.file.create({data:{companyId:req.user!.companyId!,ownerId:req.user!.id,name:safeFilename(req.file.originalname),storageKey:key,mimeType:req.file.mimetype||'application/octet-stream',sizeBytes:req.file.size,source:'UPLOAD'}});await db.company.update({where:{id:req.user!.companyId!},data:{storageUsedBytes:{increment:req.file.size}}});const updated=await db.task.update({where:{id:task.id},data:{solutionKey:key,status:'COMPLETED'}});await notify(task.createdById,'Task completed',task.title,task.companyId,'TASK_COMPLETED',true,{entityId:task.id});res.status(201).json({task:updated,fileId:f.id});}catch(e){next(e)}});
 
-r.get('/messages',auth,async(req:AuthedRequest,res,next)=>{try{const companyId=req.user!.companyId!;const groupId=req.query.groupId?String(req.query.groupId):'';const withUser=req.query.withUser?String(req.query.withUser):'';let where:any={companyId};if(groupId){const member=await db.groupMember.findFirst({where:{groupId,userId:req.user!.id,group:{companyId}}});if(!member)return res.status(403).json({error:'Group access denied'});where.groupId=groupId;}else if(withUser){where.OR=[{senderId:req.user!.id,recipientId:withUser},{senderId:withUser,recipientId:req.user!.id}];}else where.OR=[{senderId:req.user!.id},{recipientId:req.user!.id}];res.json(await db.message.findMany({where,include:{sender:{select:{id:true,uniqueName:true,email:true}},recipient:{select:{id:true,uniqueName:true,email:true}}},orderBy:{createdAt:'asc'},take:500}));}catch(e){next(e)}});
-r.post('/messages',auth,activeSubscription,async(req:AuthedRequest,res,next)=>{try{const body=String(req.body.body||'').trim();const recipientId=req.body.recipientId?String(req.body.recipientId):undefined;const groupId=req.body.groupId?String(req.body.groupId):undefined;if(!body||((recipientId?1:0)+(groupId?1:0)!==1))return res.status(400).json({error:'Choose a recipient or group and enter a message'});if(recipientId&&!await db.user.findFirst({where:{id:recipientId,companyId:req.user!.companyId!,status:'ACTIVE'}}))return res.status(404).json({error:'Recipient not found'});if(groupId&&!await db.groupMember.findFirst({where:{groupId,userId:req.user!.id,group:{companyId:req.user!.companyId!}}}))return res.status(403).json({error:'Group access denied'});const m=await db.message.create({data:{companyId:req.user!.companyId!,senderId:req.user!.id,recipientId,groupId,body:body.slice(0,10000)}});if(recipientId)await notify(recipientId,'New message',body.slice(0,160),req.user!.companyId!, 'MESSAGE_RECEIVED', true);if(groupId){const members=await db.groupMember.findMany({where:{groupId,userId:{not:req.user!.id}},select:{userId:true}});for(const member of members)await notify(member.userId,'New group message',body.slice(0,160),req.user!.companyId!, 'MESSAGE_RECEIVED', true);}res.status(201).json(m);}catch(e){next(e)}});
-r.get('/groups',auth,async(req:AuthedRequest,res)=>{res.json(await db.group.findMany({where:{companyId:req.user!.companyId!,members:{some:{userId:req.user!.id}}},include:{members:{include:{user:{select:{id:true,email:true,uniqueName:true}}}}}}));});
-r.post('/groups',auth,activeSubscription,async(req:AuthedRequest,res,next)=>{try{const ids=Array.isArray(req.body.userIds)?req.body.userIds.map(String):[];const name=String(req.body.name||'').trim().slice(0,120);if(!name)return res.status(400).json({error:'Group name is required'});const unique=[...new Set([req.user!.id,...ids])];const valid=await db.user.findMany({where:{id:{in:unique},companyId:req.user!.companyId!,status:'ACTIVE'},select:{id:true}});if(valid.length!==unique.length)return res.status(400).json({error:'One or more users are outside the company or inactive'});const g=await db.group.create({data:{companyId:req.user!.companyId!,name,createdById:req.user!.id,members:{create:valid.map(u=>({userId:u.id}))}}});for(const member of valid)if(member.id!==req.user!.id)await notify(member.id,'Added to group',`You were added to the ${name} group.`,req.user!.companyId!,'MESSAGE_RECEIVED',false,{entityId:g.id});await notifyCompanyAdmins(req.user!.companyId!,'Group created',`${name} was created by ${req.user!.email||'a user'}.`,'MESSAGE_RECEIVED',{excludeUserId:req.user!.id,entityId:g.id});res.status(201).json(g);}catch(e){next(e)}});
-r.patch('/groups/:id',auth,activeSubscription,async(req:AuthedRequest,res,next)=>{try{const g=await db.group.findFirst({where:{id:String(req.params.id),companyId:req.user!.companyId!,members:{some:{userId:req.user!.id}}}});if(!g)return res.status(404).json({error:'Group not found'});if(req.user!.role!=='COMPANY_ADMIN'&&req.user!.role!=='SUPER_ADMIN'&&g.createdById!==req.user!.id)return res.status(403).json({error:'Only the group creator or Company Admin can rename this group'});const name=String(req.body.name||'').trim().slice(0,120);if(!name)return res.status(400).json({error:'Group name is required'});const updated=await db.group.update({where:{id:g.id},data:{name}});const members=await db.groupMember.findMany({where:{groupId:g.id,userId:{not:req.user!.id}},select:{userId:true}});for(const member of members)await notify(member.userId,'Group renamed',`The group is now named ${name}.`,req.user!.companyId!,'MESSAGE_RECEIVED',false,{entityId:g.id});res.json(updated);}catch(e){next(e)}});
-r.delete('/groups/:id',auth,activeSubscription,async(req:AuthedRequest,res,next)=>{try{const g=await db.group.findFirst({where:{id:String(req.params.id),companyId:req.user!.companyId!,members:{some:{userId:req.user!.id}}}});if(!g)return res.status(404).json({error:'Group not found'});if(req.user!.role!=='COMPANY_ADMIN'&&req.user!.role!=='SUPER_ADMIN'&&g.createdById!==req.user!.id)return res.status(403).json({error:'Only the group creator or Company Admin can delete this group'});const members=await db.groupMember.findMany({where:{groupId:g.id,userId:{not:req.user!.id}},select:{userId:true}});await db.group.delete({where:{id:g.id}});for(const member of members)await notify(member.userId,'Group deleted',`The group ${g.name} was deleted.`,req.user!.companyId!,'MESSAGE_RECEIVED',false,{entityId:g.id});res.status(204).end();}catch(e){next(e)}});
+r.get('/messages',auth,async(req:AuthedRequest,res,next)=>{try{
+ const companyId=req.user!.companyId!; const groupId=req.query.groupId?String(req.query.groupId):''; const withUser=req.query.withUser?String(req.query.withUser):'';
+ let conversation:any=null;
+ if(groupId){
+   conversation=await db.conversation.findFirst({where:{id:groupId,companyId,type:'GROUP',participants:{some:{userId:req.user!.id}}},select:{id:true}});
+ }else if(withUser){
+   conversation=await db.conversation.findFirst({where:{companyId,type:'DIRECT',participants:{every:{userId:{in:[req.user!.id,withUser]}}},AND:[{participants:{some:{userId:req.user!.id}}},{participants:{some:{userId:withUser}}}]},select:{id:true},orderBy:{updatedAt:'desc'}});
+ }
+ if(!conversation){ return res.json([]); }
+ const rows=await db.message.findMany({where:{conversationId:conversation.id,deletedAt:null},include:{sender:{select:{id:true,uniqueName:true,email:true}}},orderBy:[{createdAt:'asc'},{id:'asc'}],take:500});
+ return res.json(rows);
+}catch(e){next(e)}});
+
+r.post('/messages',auth,activeSubscription,async(req:AuthedRequest,res,next)=>{try{
+ const body=String(req.body.body||'').trim(); const recipientId=req.body.recipientId?String(req.body.recipientId):''; const groupId=req.body.groupId?String(req.body.groupId):'';
+ if(!body||((recipientId?1:0)+(groupId?1:0)!==1))return res.status(400).json({error:'Choose a recipient or group and enter a message'});
+ const companyId=req.user!.companyId!;
+ let conversation:any=null;
+ if(groupId){
+   conversation=await db.conversation.findFirst({where:{id:groupId,companyId,type:'GROUP',participants:{some:{userId:req.user!.id}}},select:{id:true}});
+   if(!conversation)return res.status(403).json({error:'Group access denied'});
+ }else{
+   const recipient=await db.user.findFirst({where:{id:recipientId,companyId,status:'ACTIVE'},select:{id:true}});
+   if(!recipient)return res.status(404).json({error:'Recipient not found'});
+   conversation=await db.conversation.findFirst({where:{companyId,type:'DIRECT',participants:{every:{userId:{in:[req.user!.id,recipientId]}}},AND:[{participants:{some:{userId:req.user!.id}}},{participants:{some:{userId:recipientId}}}]},select:{id:true},orderBy:{updatedAt:'desc'}});
+   if(!conversation){
+     conversation=await db.conversation.create({data:{companyId,type:'DIRECT',createdById:req.user!.id,participants:{create:[{userId:req.user!.id},{userId:recipientId}]}},select:{id:true}});
+   }
+ }
+ const m=await db.$transaction(async(tx)=>{const created=await tx.message.create({data:{companyId,conversationId:conversation.id,senderId:req.user!.id,body:body.slice(0,10000)},include:{sender:{select:{id:true,uniqueName:true,email:true}}}});await tx.conversation.update({where:{id:conversation.id},data:{updatedAt:new Date()}});return created;});
+ if(recipientId)await notify(recipientId,'New message',body.slice(0,160),companyId,'MESSAGE_RECEIVED',true);
+ if(groupId){const members=await db.conversationParticipant.findMany({where:{conversationId:groupId,userId:{not:req.user!.id}},select:{userId:true}});for(const member of members)await notify(member.userId,'New group message',body.slice(0,160),companyId,'MESSAGE_RECEIVED',true);}
+ return res.status(201).json(m);
+}catch(e){next(e)}});
+
+r.get('/groups',auth,async(req:AuthedRequest,res,next)=>{try{
+ const rows=await db.conversation.findMany({where:{companyId:req.user!.companyId!,type:'GROUP',participants:{some:{userId:req.user!.id}}},include:{participants:{include:{user:{select:{id:true,email:true,uniqueName:true,role:true,status:true}}}}},orderBy:{updatedAt:'desc'}});
+ return res.json(rows.map(g=>({id:g.id,name:g.name||'Group',createdById:g.createdById,members:g.participants.map(p=>({userId:p.userId,user:p.user}))})));
+}catch(e){next(e)}});
+
+r.post('/groups',auth,activeSubscription,async(req:AuthedRequest,res,next)=>{try{
+ const ids=Array.isArray(req.body.userIds)?req.body.userIds.map(String):[]; const name=String(req.body.name||'').trim().slice(0,120); const companyId=req.user!.companyId!;
+ if(!name)return res.status(400).json({error:'Group name is required'});
+ const unique=[...new Set([req.user!.id,...ids])];
+ const valid=await db.user.findMany({where:{id:{in:unique},companyId,status:'ACTIVE'},select:{id:true}});
+ if(valid.length!==unique.length)return res.status(400).json({error:'One or more users are outside the company or inactive'});
+ const g=await db.conversation.create({data:{companyId,type:'GROUP',name,createdById:req.user!.id,participants:{create:valid.map(u=>({userId:u.id}))}},include:{participants:{include:{user:{select:{id:true,email:true,uniqueName:true,role:true,status:true}}}}}});
+ for(const member of valid)if(member.id!==req.user!.id)await notify(member.id,'Added to group',`You were added to the ${name} group.`,companyId,'MESSAGE_RECEIVED',false,{entityId:g.id});
+ await notifyCompanyAdmins(companyId,'Group created',`${name} was created by ${req.user!.email||'a user'}.`,'MESSAGE_RECEIVED',{excludeUserId:req.user!.id,entityId:g.id});
+ return res.status(201).json({id:g.id,name:g.name,createdById:g.createdById,members:g.participants.map(p=>({userId:p.userId,user:p.user}))});
+}catch(e){next(e)}});
+
+r.patch('/groups/:id',auth,activeSubscription,async(req:AuthedRequest,res,next)=>{try{
+ const id=String(req.params.id); const g=await db.conversation.findFirst({where:{id,companyId:req.user!.companyId!,type:'GROUP',participants:{some:{userId:req.user!.id}}}}); if(!g)return res.status(404).json({error:'Group not found'});
+ if(req.user!.role!=='COMPANY_ADMIN'&&req.user!.role!=='SUPER_ADMIN'&&g.createdById!==req.user!.id)return res.status(403).json({error:'Only the group creator or Company Admin can rename this group'});
+ const name=String(req.body.name||'').trim().slice(0,120);if(!name)return res.status(400).json({error:'Group name is required'});const updated=await db.conversation.update({where:{id},data:{name}});return res.json({id:updated.id,name:updated.name,createdById:updated.createdById});
+}catch(e){next(e)}});
+
+r.delete('/groups/:id',auth,activeSubscription,async(req:AuthedRequest,res,next)=>{try{
+ const id=String(req.params.id); const g=await db.conversation.findFirst({where:{id,companyId:req.user!.companyId!,type:'GROUP',participants:{some:{userId:req.user!.id}}}});if(!g)return res.status(404).json({error:'Group not found'});
+ if(req.user!.role!=='COMPANY_ADMIN'&&req.user!.role!=='SUPER_ADMIN'&&g.createdById!==req.user!.id)return res.status(403).json({error:'Only the group creator or Company Admin can delete this group'});
+ const members=await db.conversationParticipant.findMany({where:{conversationId:id,userId:{not:req.user!.id}},select:{userId:true}});await db.conversation.delete({where:{id}});for(const member of members)await notify(member.userId,'Group deleted',`The group ${g.name||'group'} was deleted.`,g.companyId,'MESSAGE_RECEIVED',false,{entityId:id});return res.status(204).end();
+}catch(e){next(e)}});
+
 r.get('/emails',auth,async(req:AuthedRequest,res,next)=>{try{
  const companyId=req.user!.companyId!; const box=String(req.query.box||'inbox');
  const rows:any[]=await db.$queryRaw`

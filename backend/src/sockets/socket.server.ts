@@ -31,6 +31,9 @@ export const SOCKET_EVENTS = {
     STOP_TYPING: "chat:stop_typing",
 
     MESSAGE_READ: "chat:message_read",
+    MESSAGE_DELIVERED: "chat:message_delivered",
+    PRESENCE: "chat:presence",
+    PRESENCE_SNAPSHOT: "chat:presence_snapshot",
 
     ERROR: "chat:error",
   },
@@ -168,7 +171,27 @@ export class SocketServer {
        *
        * Notifications will use this later.
        */
+      if (user.companyId) {
+        socket.join(this.getCompanyRoom(user.companyId));
+      }
+
       socket.join(this.getUserRoom(user.id));
+
+      // Tell the new client which company users are currently online.
+      const onlineUserIds = [...this.io.sockets.sockets.values()]
+        .map((s) => s.data.user as SocketUser | undefined)
+        .filter((peer): peer is SocketUser => Boolean(peer?.id) && peer?.companyId === user.companyId)
+        .map((peer) => peer.id);
+      socket.emit(SOCKET_EVENTS.CHAT.PRESENCE_SNAPSHOT, {
+        userIds: [...new Set(onlineUserIds)],
+      });
+
+      if (user.companyId) {
+        socket.to(this.getCompanyRoom(user.companyId)).emit(
+          SOCKET_EVENTS.CHAT.PRESENCE,
+          { userId: user.id, online: true },
+        );
+      }
 
       /**
        * Register chat events.
@@ -186,6 +209,18 @@ export class SocketServer {
 
       socket.on("disconnect", (reason) => {
         console.log(`[Socket.IO] Disconnected: ${user.id} (${reason})`);
+
+        // A user may have multiple tabs/devices. Only broadcast offline when
+        // the last authenticated socket for that user has gone away.
+        const stillOnline = [...this.io.sockets.sockets.values()].some(
+          (s) => (s.data.user as SocketUser | undefined)?.id === user.id,
+        );
+        if (!stillOnline && user.companyId) {
+          this.io.to(this.getCompanyRoom(user.companyId)).emit(
+            SOCKET_EVENTS.CHAT.PRESENCE,
+            { userId: user.id, online: false },
+          );
+        }
       });
     });
   }
@@ -202,6 +237,10 @@ export class SocketServer {
 
   getConversationRoom(conversationId: string): string {
     return `conversation:${conversationId}`;
+  }
+
+  getCompanyRoom(companyId: string): string {
+    return `company:${companyId}`;
   }
 
   getUserRoom(userId: string): string {
