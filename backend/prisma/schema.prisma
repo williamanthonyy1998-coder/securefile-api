@@ -64,7 +64,7 @@ model Company {
   faxLines            FaxLine[]
   files               File[]
   folders             Folder[]
-  groups              Group[]
+  conversations       Conversation[]
   messages            Message[]
   notifications       Notification[]
   shares              Share[]
@@ -74,39 +74,48 @@ model Company {
 }
 
 model User {
-  id                      String              @id @default(cuid())
-  companyId               String?
-  email                   String              @unique
-  uniqueName              String
-  passwordHash            String?
-  role                    Role
-  status                  UserStatus          @default(INVITED)
-  emailVerifiedAt         DateTime?
-  personalFolderAllowed   Boolean             @default(true)
-  createdAt               DateTime            @default(now())
-  updatedAt               DateTime            @updatedAt
-  requestedAccessRequests AccessRequest[]     @relation("AccessRequester")
-  targetedAccessRequests  AccessRequest[]     @relation("AccessTarget")
-  assignedApprovals       Approval[]          @relation("ApprovalApprover")
-  requestedApprovals      Approval[]          @relation("ApprovalRequester")
+  id                    String     @id @default(cuid())
+  companyId             String?
+  email                 String     @unique
+  uniqueName            String
+  passwordHash          String?
+  role                  Role
+  status                UserStatus @default(INVITED)
+  emailVerifiedAt       DateTime?
+  personalFolderAllowed Boolean    @default(true)
+  createdAt             DateTime   @default(now())
+  updatedAt             DateTime   @updatedAt
+
+  requestedAccessRequests AccessRequest[] @relation("AccessRequester")
+  targetedAccessRequests  AccessRequest[] @relation("AccessTarget")
+  assignedApprovals       Approval[]      @relation("ApprovalApprover")
+  requestedApprovals      Approval[]      @relation("ApprovalRequester")
   auditLogs               AuditLog[]
-  receivedEmails          EmailMessage[]      @relation("EmailRecipient")
-  sentEmails              EmailMessage[]      @relation("EmailSender")
-  faxJobs                 FaxJob[]
-  faxLine                 FaxLine?
-  ownedFiles              File[]              @relation("FileOwner")
-  ownedFolders            Folder[]            @relation("FolderOwner")
-  createdGroups           Group[]             @relation("GroupCreator")
-  groupMemberships        GroupMember[]
-  receivedMessages        Message[]           @relation("MessageRecipient")
-  sentMessages            Message[]           @relation("MessageSender")
-  notifications           Notification[]
-  ownedShares             Share[]             @relation("ShareOwner")
-  receivedShares          Share[]             @relation("ShareRecipient")
-  assignedTasks           Task[]              @relation("TaskAssignee")
-  createdTasks            Task[]              @relation("TaskCreator")
-  company                 Company?            @relation(fields: [companyId], references: [id], onDelete: Cascade)
-  tokens                  VerificationToken[]
+
+  receivedEmails EmailMessage[] @relation("EmailRecipient")
+  sentEmails     EmailMessage[] @relation("EmailSender")
+
+  faxJobs FaxJob[]
+  faxLine FaxLine?
+
+  ownedFiles   File[]   @relation("FileOwner")
+  ownedFolders Folder[] @relation("FolderOwner")
+
+  createdConversations     Conversation[]            @relation("ConversationCreator")
+  conversationParticipants ConversationParticipant[] @relation("ConversationParticipants")
+
+  sentMessages Message[] @relation("MessageSender")
+
+  notifications Notification[]
+
+  ownedShares    Share[] @relation("ShareOwner")
+  receivedShares Share[] @relation("ShareRecipient")
+
+  assignedTasks Task[] @relation("TaskAssignee")
+  createdTasks  Task[] @relation("TaskCreator")
+
+  company Company?            @relation(fields: [companyId], references: [id], onDelete: Cascade)
+  tokens  VerificationToken[]
 }
 
 model VerificationToken {
@@ -147,27 +156,28 @@ model Folder {
 }
 
 model File {
-  id             String          @id @default(cuid())
-  companyId      String
-  ownerId        String?
-  folderId       String?
-  name           String
-  storageKey     String
-  mimeType       String
-  sizeBytes      BigInt
-  checksum       String?
-  source         FileSource      @default(UPLOAD)
-  createdAt      DateTime        @default(now())
-  updatedAt      DateTime        @updatedAt
-  deletedAt      DateTime?
-  accessRequests AccessRequest[] @relation("AccessRequestFile")
-  faxJobs        FaxJob[]
-  company        Company         @relation(fields: [companyId], references: [id], onDelete: Cascade)
-  folder         Folder?         @relation(fields: [folderId], references: [id])
-  owner          User?           @relation("FileOwner", fields: [ownerId], references: [id])
-  versions       FileVersion[]
-  shares         Share[]
-  tasks          Task[]          @relation("TaskFile")
+  id                 String              @id @default(cuid())
+  companyId          String
+  ownerId            String?
+  folderId           String?
+  name               String
+  storageKey         String
+  mimeType           String
+  sizeBytes          BigInt
+  checksum           String?
+  source             FileSource          @default(UPLOAD)
+  createdAt          DateTime            @default(now())
+  updatedAt          DateTime            @updatedAt
+  deletedAt          DateTime?
+  messageAttachments MessageAttachment[]
+  accessRequests     AccessRequest[]     @relation("AccessRequestFile")
+  faxJobs            FaxJob[]
+  company            Company             @relation(fields: [companyId], references: [id], onDelete: Cascade)
+  folder             Folder?             @relation(fields: [folderId], references: [id])
+  owner              User?               @relation("FileOwner", fields: [ownerId], references: [id])
+  versions           FileVersion[]
+  shares             Share[]
+  tasks              Task[]              @relation("TaskFile")
 
   @@index([companyId, name])
   @@index([companyId, folderId])
@@ -285,43 +295,38 @@ model Task {
   @@index([companyId, status, dueAt])
 }
 
-model Group {
-  id          String        @id @default(cuid())
-  companyId   String
-  createdById String?
-  name        String
-  createdAt   DateTime      @default(now())
-  company     Company       @relation(fields: [companyId], references: [id], onDelete: Cascade)
-  createdBy   User?         @relation("GroupCreator", fields: [createdById], references: [id])
-  members     GroupMember[]
-  messages    Message[]
-}
-
-model GroupMember {
-  id        String   @id @default(cuid())
-  groupId   String
-  userId    String
-  createdAt DateTime @default(now())
-  group     Group    @relation(fields: [groupId], references: [id], onDelete: Cascade)
-  user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
-
-  @@unique([groupId, userId])
-}
-
 model Message {
-  id          String   @id @default(cuid())
-  companyId   String
-  senderId    String
-  recipientId String?
-  groupId     String?
-  body        String
-  createdAt   DateTime @default(now())
-  company     Company  @relation(fields: [companyId], references: [id], onDelete: Cascade)
-  group       Group?   @relation(fields: [groupId], references: [id])
-  recipient   User?    @relation("MessageRecipient", fields: [recipientId], references: [id])
-  sender      User     @relation("MessageSender", fields: [senderId], references: [id], onDelete: Cascade)
+  id             String    @id @default(cuid())
+  companyId      String
+  conversationId String
+  senderId       String
+  body           String
+  createdAt      DateTime  @default(now())
+  updatedAt      DateTime  @updatedAt
+  deletedAt      DateTime?
 
+  company      Company             @relation(fields: [companyId], references: [id], onDelete: Cascade)
+  conversation Conversation        @relation(fields: [conversationId], references: [id], onDelete: Cascade)
+  sender       User                @relation("MessageSender", fields: [senderId], references: [id], onDelete: Cascade)
+  attachments  MessageAttachment[]
+
+  @@index([conversationId, createdAt])
   @@index([companyId, createdAt])
+  @@index([senderId, createdAt])
+}
+
+model MessageAttachment {
+  id        String   @id @default(cuid())
+  messageId String
+  fileId    String
+  createdAt DateTime @default(now())
+
+  message Message @relation(fields: [messageId], references: [id], onDelete: Cascade)
+  file    File    @relation(fields: [fileId], references: [id], onDelete: Cascade)
+
+  @@unique([messageId, fileId])
+  @@index([messageId])
+  @@index([fileId])
 }
 
 model FaxLine {
@@ -370,23 +375,23 @@ model Notification {
   id String @id @default(cuid())
 
   companyId String?
-  userId String
+  userId    String
 
-  type NotificationType @default(SYSTEM)
+  type  NotificationType @default(SYSTEM)
   title String
-  body String
+  body  String
 
   entityId String?
   metadata Json?
 
-  readAt DateTime?
-  createdAt DateTime @default(now())
+  readAt    DateTime?
+  createdAt DateTime  @default(now())
 
-  company Company? @relation(fields:[companyId],references:[id],onDelete:Cascade)
-  user User @relation(fields:[userId],references:[id],onDelete:Cascade)
+  company Company? @relation(fields: [companyId], references: [id], onDelete: Cascade)
+  user    User     @relation(fields: [userId], references: [id], onDelete: Cascade)
 
-  @@index([userId,readAt,createdAt])
-  @@index([userId,type,createdAt])
+  @@index([userId, readAt, createdAt])
+  @@index([userId, type, createdAt])
   @@index([entityId])
 }
 
@@ -460,6 +465,24 @@ model PaymentEvent {
   eventId   String   @unique
   eventType String
   createdAt DateTime @default(now())
+}
+
+model Conversation {
+  id          String           @id @default(cuid())
+  companyId   String
+  type        ConversationType @default(DIRECT)
+  name        String?
+  createdById String?
+  createdAt   DateTime         @default(now())
+  updatedAt   DateTime         @updatedAt
+
+  company      Company                   @relation(fields: [companyId], references: [id], onDelete: Cascade)
+  createdBy    User?                     @relation("ConversationCreator", fields: [createdById], references: [id])
+  participants ConversationParticipant[]
+  messages     Message[]
+
+  @@index([companyId, updatedAt])
+  @@index([companyId, type])
 }
 
 enum Role {
@@ -541,4 +564,24 @@ enum FileSource {
 enum EmailDirection {
   SENT
   RECEIVED
+}
+
+model ConversationParticipant {
+  id             String    @id @default(cuid())
+  conversationId String
+  userId         String
+  joinedAt       DateTime  @default(now())
+  lastReadAt     DateTime?
+
+  conversation Conversation @relation(fields: [conversationId], references: [id], onDelete: Cascade)
+  user         User         @relation("ConversationParticipants", fields: [userId], references: [id], onDelete: Cascade)
+
+  @@unique([conversationId, userId])
+  @@index([userId])
+  @@index([conversationId, userId])
+}
+
+enum ConversationType {
+  DIRECT
+  GROUP
 }
