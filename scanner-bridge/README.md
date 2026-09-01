@@ -1,51 +1,30 @@
-# SecureFile Scanner Bridge (Windows WIA)
+# SecureFile Universal Scanner Bridge (Windows)
 
-This optional local service connects a Windows WIA-compatible physical scanner to SecureFile. The browser cannot directly control arbitrary USB/TWAIN/WIA scanners, so the bridge runs on the Windows workstation where the scanner is installed.
+The bridge connects SecureFile to Windows scanners through multiple interfaces instead of assuming every scanner is WIA-only.
 
-## Install
+## Supported interfaces
 
-```bat
-cd scanner-bridge
-npm install
-npm start
-```
+- **WIA** — direct Windows Image Acquisition fallback.
+- **TWAIN** — through NAPS2 on Windows.
+- **eSCL** — through NAPS2 for compatible modern network scanners.
+- **ADF / flatbed / duplex**, when the selected scanner/driver exposes the capability.
+- Multiple pages (up to 100 per batch in the SecureFile UI).
 
-It listens on `http://127.0.0.1:8765`.
+NAPS2 officially supports WIA, TWAIN and eSCL on Windows, and its CLI can enumerate devices and select a driver/device for scanning. citeturn0search0turn0search2
 
-Set the main project's `.env`:
+## Windows setup
 
-`SCANNER_BRIDGE_URL=http://127.0.0.1:8765`
+1. Install the scanner manufacturer's Windows driver/software.
+2. Install **NAPS2** on the scanner PC for the broadest compatibility (WIA/TWAIN/eSCL).
+3. Connect/power on the scanner.
+4. Run `start-windows.bat`.
+5. Open SecureFile on that same Windows PC.
+6. Go to **Scan Documents** and click **Refresh scanners**.
+7. Select the actual scanner and driver (`Auto`, `WIA`, `TWAIN`, or `eSCL`).
+8. Select ADF/Flatbed, DPI, color mode and duplex, then **Start Scan**.
 
-## Scanner modes
+The bridge still has direct WIA fallback if NAPS2 is not installed. For TWAIN/eSCL, NAPS2 is required.
 
-- **ADF:** scans the requested number of pages from the automatic document feeder and combines them into one PDF.
-- **Flatbed:** scans one page at a time from the flatbed.
-- **Duplex:** uses both sides when the scanner driver supports WIA duplex handling.
+## Important limitation
 
-The SecureFile Scanner module also has a **Mobile Camera** mode. On a phone, the user can capture pages one-by-one, reorder/remove them, give the final PDF a name, and save all captured pages as one PDF. No scanner-app PDF upload is required.
-
-## SecureFile browser workflow
-
-The SecureFile web app connects to this bridge from the browser. The user can:
-
-1. Connect the physical WIA scanner to the Windows PC.
-2. Open SecureFile in Chrome on that same PC.
-3. Scan one or more ADF batches (up to 100 pages per batch) or use the flatbed.
-4. Review, remove, and reorder scanned pages.
-5. Give the final PDF any filename and choose a visible destination folder.
-6. SecureFile creates one PDF on the server and stores it as a private `SCAN` file owned by that user.
-
-The file is not visible to other company users unless the owner/admin shares it or grants permission through SecureFile's existing access controls.
-
-
-## Windows quick start
-
-1. Install the scanner's official Windows WIA driver.
-2. Connect and power on the scanner.
-3. On the same Windows PC, double-click `start-windows.bat`.
-4. Keep that black command window running while scanning.
-5. Open SecureFile in Chrome on that same PC.
-6. Open **Scan Documents** and click **Check connection**.
-7. When it says `Scanner bridge connected`, click **Start Scan**.
-
-If SecureFile still says the bridge is disconnected, open `http://127.0.0.1:8765/health` in Chrome on that PC. If that page does not return JSON, the bridge is not running or Windows/Node is blocking it.
+No browser bridge can honestly guarantee every scanner model. Compatibility depends on the Windows/vendor driver or network protocol exposed by the hardware. NAPS2's own documentation recommends switching between WIA and TWAIN if a device is not visible, and eSCL is intended for modern network scanners. citeturn0search1turn0search2

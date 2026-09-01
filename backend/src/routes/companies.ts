@@ -15,7 +15,11 @@ r.get("/me", auth, async (req: AuthedRequest, res) => {
     return res.status(400).json({ error: "No company" });
   const c = await db.company.findUnique({
     where: { id: req.user.companyId },
-    include: { subscription: true },
+    select: {
+      id:true,name:true,slug:true,contactEmail:true,businessIndustry:true,businessDescription:true,logoUrl:true,
+      createdAt:true,updatedAt:true,storageLimitGb:true,storageUsedBytes:true,
+      subscription: { select: { id:true,planCode:true,users:true,storageGb:true,status:true,expiresAt:true,addons:true } },
+    },
   });
   if (!c) return res.status(404).json({ error: "Company not found" });
   res.json({
@@ -36,29 +40,37 @@ r.get("/me", auth, async (req: AuthedRequest, res) => {
   });
 });
 
-r.get("/stats", auth, async (req: AuthedRequest, res) => {
-  const id = req.user?.companyId;
-  if (!id) return res.status(400).json({ error: "No company" });
-  const [users, files, folders, notifications] = await Promise.all([
-    db.user.count({ where: { companyId: id } }),
-    db.file.count({ where: { companyId: id } }),
-    db.folder.count({ where: { companyId: id } }),
-    db.notification.count({
+r.get("/stats", auth, async (req: AuthedRequest, res, next) => {
+  try {
+    const id = req.user?.companyId;
+    if (!id) return res.status(400).json({ error: "No company" });
+
+    const c = await db.company.findUnique({
+      where: { id },
+      select: {
+        storageLimitGb: true,
+        storageUsedBytes: true,
+        _count: { select: { users: true, files: true, folders: true } },
+      },
+    });
+    if (!c) return res.status(404).json({ error: "Company not found" });
+
+    const unreadNotifications = await db.notification.count({
       where: { companyId: id, userId: req.user!.id, readAt: null },
-    }),
-  ]);
-  const c = await db.company.findUnique({
-    where: { id },
-    select: { storageLimitGb: true, storageUsedBytes: true },
-  });
-  res.json({
-    users,
-    files,
-    folders,
-    unreadNotifications: notifications,
-    storageLimitGb: c?.storageLimitGb || 0,
-    storageUsedBytes: String(c?.storageUsedBytes || 0),
-  });
+    });
+
+    res.setHeader("Cache-Control", "private, no-store");
+    res.json({
+      users: c._count.users,
+      files: c._count.files,
+      folders: c._count.folders,
+      unreadNotifications,
+      storageLimitGb: c.storageLimitGb || 0,
+      storageUsedBytes: String(c.storageUsedBytes || 0),
+    });
+  } catch (e) {
+    next(e);
+  }
 });
 
 export default r;

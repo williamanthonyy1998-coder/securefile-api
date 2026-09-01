@@ -244,67 +244,48 @@ r.post('/login', async (req, res, next) => {
     const password = String(req.body.password || '');
 
     if (!email || !password) {
-      return res.status(400).json({
-        error: 'Email and password are required',
-      });
+      return res.status(400).json({ error: 'Email and password are required' });
     }
 
-    const u = await db.user.findUnique({
-      where: { email },
-    });
-
-    if (
-      !u ||
-      !u.passwordHash ||
-      !(await verifyPassword(password, u.passwordHash))
-    ) {
-      return res.status(401).json({
-        error: 'Invalid email or password',
-      });
+    const u = await db.user.findUnique({ where: { email } });
+    if (!u || !u.passwordHash || !(await verifyPassword(password, u.passwordHash))) {
+      return res.status(401).json({ error: 'Invalid email or password' });
     }
-
     if (!u.emailVerifiedAt) {
-      return res.status(403).json({
-        error: 'Please verify your email before logging in',
-      });
+      return res.status(403).json({ error: 'Please verify your email before logging in' });
     }
-
     if (u.status === 'SUSPENDED') {
-      return res.status(403).json({
-        error: 'Account suspended',
-      });
+      return res.status(403).json({ error: 'Account suspended' });
     }
 
-    if (u.companyId) {
-      const subscription = await db.subscription.findUnique({
-        where: { companyId: u.companyId },
-        select: { status: true },
-      });
+    const subscription = u.companyId
+      ? await db.subscription.findUnique({
+          where: { companyId: u.companyId },
+          select: { status: true, planCode: true, addons: true },
+        })
+      : null;
 
-      if (
-        subscription?.status === 'PENDING' &&
-        env.BILLING_MODE === 'stripe'
-      ) {
-        return res.status(402).json({
-          error: 'Payment is required before your workspace can be activated',
-        });
-      }
+    if (subscription?.status === 'PENDING' && env.BILLING_MODE === 'stripe') {
+      return res.status(402).json({ error: 'Payment is required before your workspace can be activated' });
     }
 
-    const token = signAccess({
+    const accessToken = signAccess({
       id: u.id,
       role: u.role,
       companyId: u.companyId,
+      email: u.email,
     });
 
     return res.json({
-      token,
+      token: accessToken,
       user: {
         id: u.id,
         email: u.email,
         name: u.uniqueName,
         role: u.role,
         companyId: u.companyId,
+        planCode: subscription?.planCode || null,
+        addons: subscription?.addons || {},
       },
     });
   } catch (error) {

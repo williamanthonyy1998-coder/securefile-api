@@ -37,6 +37,8 @@ const parsed = z.object({
   AI_API_KEY: optionalString,
   AI_BASE_URL: optionalUrl,
   AI_MODEL: optionalString,
+  AI_PROVIDER: z.enum(['openai','openai-compatible']).default('openai-compatible'),
+  AI_WEB_SEARCH_ENABLED: z.preprocess(value => { if (value === undefined || value === '') return true; if (typeof value === 'string') return value.toLowerCase() === 'true'; return value; }, z.boolean()),
   OBJECT_STORAGE_ENDPOINT: optionalUrl,
   OBJECT_STORAGE_BUCKET: optionalString,
   OBJECT_STORAGE_ACCESS_KEY: optionalString,

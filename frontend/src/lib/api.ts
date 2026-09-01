@@ -114,83 +114,95 @@ function friendlySuccess(path: string, method: string, data: any) {
   return "Action completed successfully.";
 }
 
+
+const GET_CACHE_TTL_MS = 60000;
+const GET_CACHE_STALE_MS = 10 * 60 * 1000;
+const getCache = new Map<string, { expiresAt: number; data: any }>();
+const getInflight = new Map<string, Promise<any>>();
+const STORAGE_PREFIX = 'sf_api_cache_v2:';
+
+function storageKey(cacheKey:string){ return STORAGE_PREFIX + cacheKey; }
+function readPersisted(cacheKey:string){
+  try{
+    const raw=sessionStorage.getItem(storageKey(cacheKey));
+    if(!raw)return null;
+    const parsed=JSON.parse(raw);
+    if(!parsed || typeof parsed.expiresAt!=='number')return null;
+    return parsed as {expiresAt:number;data:any};
+  }catch{return null}
+}
+function writePersisted(cacheKey:string,value:{expiresAt:number;data:any}){
+  try{
+    sessionStorage.setItem(storageKey(cacheKey),JSON.stringify(value));
+  }catch{}
+}
+function clearPersisted(){
+  try{
+    for(let i=sessionStorage.length-1;i>=0;i--){
+      const k=sessionStorage.key(i);
+      if(k?.startsWith(STORAGE_PREFIX))sessionStorage.removeItem(k);
+    }
+  }catch{}
+}
+function invalidateGetCache() {
+  getCache.clear();
+  clearPersisted();
+}
 export async function api(path: string, opts: RequestInit = {}) {
-  const headers = new Headers(opts.headers);
-
-  const silentAlert = headers.get("X-Silent-Alert") === "true";
-
-  if (!(opts.body instanceof FormData)) {
-    headers.set("Content-Type", "application/json");
-  }
-
-  const authToken = token();
-
-  if (authToken) {
-    headers.set("Authorization", `Bearer ${authToken}`);
-  }
-
-  /**
-   * Send the tenant/workspace identifier with every API request.
-   *
-   * Backend can use X-Tenant-Slug to resolve the company/workspace.
-   */
-  const tenantSlug = getTenantSlug();
-
-  if (tenantSlug) {
-    headers.set("X-Tenant-Slug", tenantSlug);
-  }
-
-  const response = await fetch(API + path, {
-    ...opts,
-    headers,
-  });
-
-  const text = await response.text();
-
-  let data: any = null;
-
-  if (text) {
-    try {
-      data = JSON.parse(text);
-    } catch {
-      data = {
-        error: text,
-      };
-    }
-  }
-
-  if (!response.ok) {
-    if (!silentAlert) {
-      dispatchAlert(
-        "error",
-        data?.error || `Request failed (${response.status})`
-      );
-    }
-
-    if (response.status === 401) {
-      localStorage.removeItem("sf_token");
-      localStorage.removeItem("sf_role");
-    }
-
-    throw new Error(
-      data?.error || `Request failed (${response.status})`
-    );
-  }
-
   const method = String(opts.method || "GET").toUpperCase();
+  const isRead = method === "GET";
+  const cacheKey = isRead ? `${token()}|${path}` : "";
+  const forceRefresh = String(new Headers(opts.headers).get('X-SF-Force-Refresh') || '').toLowerCase() === 'true';
 
-  if (
-    !silentAlert &&
-    !["GET", "HEAD", "OPTIONS"].includes(method) &&
-    !path.includes("/workspace/notifications")
-  ) {
-    dispatchAlert(
-      "success",
-      friendlySuccess(path, method, data)
-    );
+  if (isRead && !forceRefresh) {
+    let cached = getCache.get(cacheKey);
+    if(!cached){
+      const persisted=readPersisted(cacheKey);
+      if(persisted){ getCache.set(cacheKey,persisted); cached=persisted; }
+    }
+    if (cached && cached.expiresAt > Date.now()) return cached.data;
+    if (cached && cached.expiresAt + GET_CACHE_STALE_MS > Date.now()) return cached.data;
+    const pending = getInflight.get(cacheKey);
+    if (pending) return pending;
   }
 
-  return data;
+  const run = async () => {
+    const headers = new Headers(opts.headers);
+    const silentAlert = headers.get("X-Silent-Alert") === "true";
+    headers.delete('X-SF-Force-Refresh');
+
+    if (!(opts.body instanceof FormData)) headers.set("Content-Type", "application/json");
+    const authToken = token();
+    if (authToken) headers.set("Authorization", `Bearer ${authToken}`);
+    const tenantSlug = getTenantSlug();
+    if (tenantSlug) headers.set("X-Tenant-Slug", tenantSlug);
+
+    const response = await fetch(API + path, {...opts, headers, cache: isRead ? 'no-store' : opts.cache});
+    const text = await response.text();
+    let data:any = null;
+    if(text){ try{data=JSON.parse(text)}catch{data={error:text}} }
+
+    if (!response.ok) {
+      if (!silentAlert) dispatchAlert("error", data?.error || `Request failed (${response.status})`);
+      if (response.status === 401 && authToken && !path.startsWith("/auth/")) {
+        localStorage.removeItem("sf_token"); localStorage.removeItem("sf_role"); localStorage.removeItem("sf_email"); localStorage.removeItem("sf_user_id"); localStorage.removeItem("sf_addons");
+        clearPersisted();
+        window.dispatchEvent(new CustomEvent("sf:session-expired"));
+      }
+      throw new Error(data?.error || `Request failed (${response.status})`);
+    }
+
+    if (!silentAlert && !["GET","HEAD","OPTIONS"].includes(method) && !path.includes("/workspace/notifications")) dispatchAlert("success", friendlySuccess(path,method,data));
+    if(isRead){
+      const entry={expiresAt:Date.now()+GET_CACHE_TTL_MS,data};
+      getCache.set(cacheKey,entry); writePersisted(cacheKey,entry);
+    }
+    return data;
+  };
+
+  if (!isRead) { invalidateGetCache(); return run(); }
+  const promise=run(); getInflight.set(cacheKey,promise);
+  try{return await promise}finally{getInflight.delete(cacheKey)}
 }
 
 export { API };

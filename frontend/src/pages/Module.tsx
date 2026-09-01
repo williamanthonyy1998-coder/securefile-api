@@ -1,14 +1,14 @@
-import {useEffect,useState} from 'react';
-import {useParams} from 'react-router-dom';
+import {useEffect,useRef,useState} from 'react';
+import {useNavigate, useParams} from 'react-router-dom';
 import {api,directUpload} from '../lib/api';
 import {jpegPagesToPdfBlob} from '../utils/jpegPdf';
-import {Check,Trash2,RefreshCw,Send,RotateCcw,ShieldCheck,Clock,FileUp,X,ScanLine,Wifi,WifiOff,ChevronLeft,ChevronRight} from 'lucide-react';
+import {Check,Trash2,RefreshCw,Send,RotateCcw,ShieldCheck,Clock,FileUp,X,ScanLine,Wifi,WifiOff,ChevronLeft,ChevronRight,Camera,Bluetooth,Flashlight,FlashlightOff,Link2Off,Download,ExternalLink,PhoneIncoming,PhoneOutgoing} from 'lucide-react';
 
 const META:any={shared:['Shared','Manage resources shared with you or by you.'],requests:['Requests','Request a file or folder by name from the person who controls it.'],approvals:['Approvals','Review incoming requests and fulfill them with the correct file or folder.'],'task-management':['Task Management','Assign, track and complete work with page-level instructions.'],trash:['Trash','Recover deleted files and folders for 30 days.'],chat:['Chat','Company-scoped secure messaging.'],'scan-documents':['Scan Documents','Connect the Windows scanner bridge, scan as many pages as you need, combine them into one PDF, name it, and save it privately.'],'fax-documents':['Fax Documents','Receive faxes on your personal SecureFile number and send documents to any fax number.'],ai:['AI Chat Bot','Ask the configured SecureFile assistant.'],settings:['Settings','Review company and subscription settings.']};
 
 export default function Module(){const{name='shared'}=useParams();const [features,setFeatures]=useState<any>({});const [data,setData]=useState<any[]>([]),[users,setUsers]=useState<any[]>([]),[err,setErr]=useState(''),[notice,setNotice]=useState('');const [refresh,setRefresh]=useState(0);const title= META[name]?.[0]||name;const desc=META[name]?.[1]||'Workspace module';
- useEffect(()=>{api('/companies/me').then((c:any)=>setFeatures(c.subscription?.addons||{})).catch(()=>{})},[]);
- useEffect(()=>{load()},[name,refresh]);async function load(){try{setErr('');if(['requests','approvals','task-management','chat'].includes(name||''))setUsers(await api('/users'));const endpoint:any={shared:'/sharing',requests:'/workspace/requests',approvals:'/workspace/approvals','task-management':'/workspace/tasks',chat:'/workspace/messages'}[name||''];if(endpoint)setData(await api(endpoint));}catch(e:any){setErr(e.message)}}
+ useEffect(()=>{try{const saved=JSON.parse(localStorage.getItem('sf_addons')||'{}');if(saved&&typeof saved==='object')setFeatures(saved);}catch{}},[]);
+ useEffect(()=>{load()},[name,refresh]);async function load(){try{setErr('');const needsUsers=['requests','approvals','task-management'].includes(name||'');const endpoint:any={shared:'/sharing',requests:'/workspace/requests',approvals:'/workspace/approvals','task-management':'/workspace/tasks'}[name||''];const jobs:any[]=[];if(needsUsers)jobs.push(api('/users'));if(endpoint)jobs.push(api(endpoint));if(jobs.length){const out=await Promise.all(jobs);let i=0;if(needsUsers)setUsers(out[i++]||[]);if(endpoint)setData(out[i++]||[]);}}catch(e:any){setErr(e.message)}}
  async function action(path:string,method='POST',body?:any){try{await api(path,{method,body:body?JSON.stringify(body):undefined});setNotice('Updated successfully.');setRefresh(x=>x+1)}catch(e:any){setErr(e.message)}}
  const gated=(name==='scan-documents'&&!features.scanner)||(name==='fax-documents'&&!features.fax);
  if(gated)return <><div className="page-head"><div><p className="eyebrow">Workspace</p><h1>{title}</h1><p>{desc}</p></div></div><div className="panel"><h2>Feature not included in your plan</h2><p className="muted">This module is hidden from your workspace because the required add-on is not included in your current SecureFile subscription.</p></div></>;
@@ -32,120 +32,264 @@ function UploadModule({kind,setErr}:any){
 }
 
 function FaxUpload({setErr}:any){
+  const navigate=useNavigate();
   const [line,setLine]=useState<any>(null),[jobs,setJobs]=useState<any[]>([]),[files,setFiles]=useState<any[]>([]),[to,setTo]=useState(''),[header,setHeader]=useState(''),[fileId,setFileId]=useState(''),[uploadFile,setUploadFile]=useState<File|null>(null),[mode,setMode]=useState<'existing'|'upload'>('existing'),[countryCode,setCountryCode]=useState('1'),[areaCode,setAreaCode]=useState(''),[loading,setLoading]=useState(true),[busy,setBusy]=useState(false);
-  async function load(){try{setLoading(true);const [fax,fileList]=await Promise.all([api('/fax'),api('/files')]);setLine(fax.line);setJobs(fax.jobs||[]);setFiles((fileList||[]).filter((f:any)=>!f.deletedAt));}catch(e:any){setErr(e.message)}finally{setLoading(false)}}
+
+  async function load(){
+    try{
+      setLoading(true);
+      const [fax,fileList]=await Promise.all([api('/fax'),api('/files')]);
+      setLine(fax.line);
+      setJobs(fax.jobs||[]);
+      setFiles((fileList||[]).filter((f:any)=>!f.deletedAt));
+    }catch(e:any){setErr(e.message)}finally{setLoading(false)}
+  }
+
   useEffect(()=>{load()},[]);
-  async function provision(){try{setBusy(true);await api('/fax/number/provision',{method:'POST',body:JSON.stringify({countryCode:+countryCode,areaCode:+areaCode})});await load()}catch(e:any){setErr(e.message)}finally{setBusy(false)}}
-  async function send(){try{if(!to.trim())return setErr('Enter the destination fax number.');if(mode==='existing'&&!fileId)return setErr('Choose a SecureFile document.');if(mode==='upload'&&!uploadFile)return setErr('Choose a document to fax.');setBusy(true);if(mode==='existing'){await api('/fax/send',{method:'POST',body:JSON.stringify({to:to.trim(),fileId,headerText:header})})}else{const uploaded=await directUpload(uploadFile!,{source:'UPLOAD'});await api('/fax/send',{method:'POST',body:JSON.stringify({to:to.trim(),fileId:uploaded.id,headerText:header})})}setTo('');setHeader('');setFileId('');setUploadFile(null);await load()}catch(e:any){setErr(e.message)}finally{setBusy(false)}}
+
+  // Fax delivery/receive events are already pushed through SecureFile's SSE
+  // notification channel. Reload only when a fax notification arrives; there
+  // is no interval/polling here.
+  useEffect(()=>{
+    const onRealtimeFax=(event:Event)=>{
+      try{
+        const n:any=JSON.parse((event as CustomEvent).detail||'{}');
+        const title=String(n.title||'').toLowerCase();
+        if(title.includes('fax')) load();
+      }catch{}
+    };
+    window.addEventListener('sf:notification',onRealtimeFax);
+    return()=>window.removeEventListener('sf:notification',onRealtimeFax);
+  },[]);
+
+  async function provision(){
+    try{
+      setBusy(true);
+      if(countryCode.length<1||countryCode.length>3)return setErr('Enter a valid country code.');
+      if(areaCode.length!==3)return setErr('Enter a valid 3-digit area code.');
+      await api('/fax/number/provision',{method:'POST',body:JSON.stringify({countryCode:+countryCode,areaCode:+areaCode})});
+      await load();
+    }catch(e:any){setErr(e.message)}finally{setBusy(false)}
+  }
+
+  async function send(){
+    try{
+      if(!to.trim())return setErr('Enter the destination fax number.');
+      if(mode==='existing'&&!fileId)return setErr('Choose a SecureFile document.');
+      if(mode==='upload'&&!uploadFile)return setErr('Choose a document to fax.');
+      setBusy(true);
+
+      if(mode==='existing'){
+        await api('/fax/send',{method:'POST',body:JSON.stringify({to:to.trim(),fileId,headerText:header})});
+      }else{
+        // Send the browser-selected file directly to the fax API. This avoids
+        // an unnecessary upload -> metadata -> second API request. The backend
+        // stores a private FAX copy after the provider accepts the fax.
+        const form=new FormData();
+        form.append('to',to.trim());
+        form.append('headerText',header);
+        form.append('file',uploadFile!);
+        await api('/fax/send',{method:'POST',body:form});
+      }
+
+      setTo('');setHeader('');setFileId('');setUploadFile(null);
+      await load();
+    }catch(e:any){setErr(e.message)}finally{setBusy(false)}
+  }
+
+  function openFile(id:string){navigate(`/files/${encodeURIComponent(id)}/view`)}
+
   if(loading)return <div className="panel"><p className="muted">Loading your fax workspace...</p></div>;
-  return <div className="grid2">
-    <div>
-      <div className="panel">
-        <h2>My personal fax number</h2>
-        <p className="muted">This number belongs only to your SecureFile user. Incoming faxes to this number are saved privately to your account and are not visible to other users unless you share them.</p>
-        {line?.phoneNumber?<div className="data" style={{fontSize:22,fontWeight:700,letterSpacing:1}}>{line.phoneNumber}</div>:<><div className="grid2"><label>Country code<input value={countryCode} onChange={e=>setCountryCode(e.target.value.replace(/\D/g,''))} placeholder="1"/></label><label>Area code<input value={areaCode} onChange={e=>setAreaCode(e.target.value.replace(/\D/g,'').slice(0,3))} placeholder="e.g. 212"/></label></div><button className="btn" disabled={busy||areaCode.length!==3} onClick={provision}>{busy?'Provisioning...':'Get my fax number'}</button><p className="muted" style={{marginTop:8}}>Provisioning a real receiving number may create a provider charge.</p></>}
+
+  return <div className="fax-workspace">
+    <div className="fax-top-grid">
+      <div className="panel fax-number-panel">
+        <div className="fax-card-head">
+          <div><p className="eyebrow">Receive faxes</p><h2>My personal fax number</h2></div>
+          <PhoneIncoming size={22}/>
+        </div>
+        <p className="muted">Anyone can send a fax to this number. SecureFile receives the document through the fax provider and saves it privately to your account.</p>
+        {line?.phoneNumber?<>
+          <div className="fax-number-value">{line.phoneNumber}</div>
+          <div className="fax-ready"><span className="fax-ready-dot"/> Ready to receive faxes</div>
+          <p className="fax-help">Give this number to the person or organization sending you a fax. Incoming documents will appear in <b>My fax history</b> automatically.</p>
+        </>:<>
+          <div className="grid2 fax-provision-grid"><label>Country code<input value={countryCode} onChange={e=>setCountryCode(e.target.value.replace(/\D/g,'').slice(0,3))} placeholder="1" inputMode="numeric"/></label><label>Area code<input value={areaCode} onChange={e=>setAreaCode(e.target.value.replace(/\D/g,'').slice(0,3))} placeholder="e.g. 212" inputMode="numeric"/></label></div>
+          <button className="btn" disabled={busy||areaCode.length!==3} onClick={provision}>{busy?'Provisioning...':'Get my fax number'}</button>
+          <p className="muted" style={{marginTop:8}}>This provisions a real receiving number from the configured fax provider and may create a provider charge.</p>
+        </>}
       </div>
-      <div className="panel">
-        <h2>Send a fax</h2><label>Recipient fax number<input value={to} onChange={e=>setTo(e.target.value)} placeholder="+14155551234"/></label><label>Header text <small className="muted">(optional, max 50 characters)</small><input maxLength={50} value={header} onChange={e=>setHeader(e.target.value)} placeholder="SecureFile"/></label>
+
+      <div className="panel fax-send-panel">
+        <div className="fax-card-head">
+          <div><p className="eyebrow">Send faxes</p><h2>Send a fax</h2></div>
+          <PhoneOutgoing size={22}/>
+        </div>
+        <label>Recipient fax number<input value={to} onChange={e=>setTo(e.target.value)} placeholder="+14155551234" inputMode="tel"/></label>
+        <label>Header text <small className="muted">(optional, max 50 characters)</small><input maxLength={50} value={header} onChange={e=>setHeader(e.target.value)} placeholder="SecureFile"/></label>
         <div className="toolbar"><button className={`btn small ${mode==='existing'?'':'secondary'}`} onClick={()=>setMode('existing')}>SecureFile file</button><button className={`btn small ${mode==='upload'?'':'secondary'}`} onClick={()=>setMode('upload')}>Upload document</button></div>
         {mode==='existing'?<label>Document<select value={fileId} onChange={e=>setFileId(e.target.value)}><option value="">Choose a file</option>{files.map((f:any)=><option key={f.id} value={f.id}>{f.name}</option>)}</select></label>:<label>Document<input type="file" accept="application/pdf,.pdf,.doc,.docx,.jpg,.jpeg,.png,.tif,.tiff" onChange={e=>setUploadFile(e.target.files?.[0]||null)}/></label>}
         <button className="btn" disabled={busy||!line?.phoneNumber||!to||((mode==='existing'&&!fileId)||(mode==='upload'&&!uploadFile))} onClick={send}><Send size={15}/>{busy?'Sending...':'Send fax'}</button>
-        <p className="muted" style={{marginTop:8}}>Your personal fax number is used as the caller ID when the provider supports it.</p>
+        <p className="muted fax-help">Your personal SecureFile fax number is used as the caller ID when the provider supports it.</p>
       </div>
     </div>
-    <div className="panel">
-      <div className="toolbar" style={{justifyContent:'space-between'}}><div><h2 style={{margin:0}}>My fax history</h2><p className="muted">Only your inbound and outbound fax jobs are shown here.</p></div><button className="btn secondary small" onClick={load}><RefreshCw size={14}/> Refresh</button></div>
-      <table><thead><tr><th>Direction</th><th>Number</th><th>Document</th><th>Status</th><th>Date</th></tr></thead><tbody>{jobs.map((j:any)=><tr key={j.id}><td>{j.direction==='INBOUND'?'Received':'Sent'}</td><td>{j.direction==='INBOUND'?j.senderNumber||'Unknown':j.recipientNumber||'—'}</td><td>{j.file?.name||'Fax transmission'}</td><td><span className={`status-pill ${j.status==='SENT'||j.status==='RECEIVED'?'active':j.status==='FAILED'?'danger':''}`}>{j.status}</span>{j.errorMessage&&<small className="table-sub">{j.errorMessage}</small>}</td><td>{new Date(j.createdAt).toLocaleString()}</td></tr>)}{!jobs.length&&<tr><td colSpan={5} className="muted">No fax activity yet.</td></tr>}</tbody></table>
+
+    <div className="panel fax-history-panel">
+      <div className="toolbar fax-history-head" style={{justifyContent:'space-between'}}>
+        <div><p className="eyebrow">Fax inbox & sent items</p><h2 style={{margin:0}}>My fax history</h2><p className="muted">Received faxes are stored privately. Sent faxes show delivery status and remain available as private FAX files.</p></div>
+        <button className="btn secondary small" onClick={load} disabled={loading||busy}><RefreshCw size={14}/> Refresh</button>
+      </div>
+      <div className="fax-table-wrap"><table><thead><tr><th>Direction</th><th>Number</th><th>Document</th><th>Status</th><th>Date</th><th>Action</th></tr></thead><tbody>{jobs.map((j:any)=><tr key={j.id}>
+        <td><span className="fax-direction"><span className={j.direction==='INBOUND'?'in':'out'}>{j.direction==='INBOUND'?<PhoneIncoming size={14}/>:<PhoneOutgoing size={14}/>}</span>{j.direction==='INBOUND'?'Received':'Sent'}</span></td>
+        <td>{j.direction==='INBOUND'?j.senderNumber||'Unknown':j.recipientNumber||'—'}</td>
+        <td><b>{j.file?.name||'Fax transmission'}</b>{j.pages?<small className="table-sub">{j.pages} page{j.pages===1?'':'s'}</small>:null}</td>
+        <td><span className={`status-pill ${j.status==='SENT'||j.status==='RECEIVED'?'active':j.status==='FAILED'?'danger':''}`}>{j.status}</span>{j.errorMessage&&<small className="table-sub">{j.errorMessage}</small>}</td>
+        <td>{new Date(j.createdAt).toLocaleString()}</td>
+        <td>{j.fileId?<div className="fax-row-actions"><button className="icon-btn" title="Open document" onClick={()=>openFile(j.fileId)}><ExternalLink size={14}/></button><button className="icon-btn" title="Download document" onClick={async()=>{try{const {downloadPrivateFile}=await import('../lib/api');await downloadPrivateFile(j.fileId,j.file?.name||'fax.pdf')}catch(e:any){setErr(e.message)}}}><Download size={14}/></button></div>:<span className="muted">—</span>}</td>
+      </tr>)}{!jobs.length&&<tr><td colSpan={6} className="muted">No fax activity yet. Provision your personal number to start receiving and sending faxes.</td></tr>}</tbody></table></div>
     </div>
   </div>
 }
 
 type ScanPage={id:string,name:string,mimeType:string,data:string};
+type CameraScannerState='idle'|'starting'|'ready'|'capturing';
 const SCANNER_BRIDGE=(import.meta.env.VITE_SCANNER_BRIDGE_URL||'http://127.0.0.1:8765').replace(/\/$/,'');
 
-function ScannerModule({setErr}:any){
-  const [bridgeOk,setBridgeOk]=useState<boolean|null>(null);
-  const [pages,setPages]=useState<ScanPage[]>([]);
-  const [busy,setBusy]=useState(false);
-  const [saving,setSaving]=useState(false);
-  const [source,setSource]=useState<'ADF'|'FLATBED'>('ADF');
-  const [batchPages,setBatchPages]=useState(25);
-  const [resolution,setResolution]=useState(300);
-  const [colorMode,setColorMode]=useState('COLOR');
-  const [duplex,setDuplex]=useState(false);
-  const [folderId,setFolderId]=useState('');
-  const [folders,setFolders]=useState<any[]>([]);
-  const [pdfName,setPdfName]=useState('Scanned Document.pdf');
-  const [bridgeMessage,setBridgeMessage]=useState('Checking scanner bridge...');
+function MobileCameraScanner({onPage,onError,busy}:any){
+  const videoRef=useRef<HTMLVideoElement|null>(null);
+  const streamRef=useRef<MediaStream|null>(null);
+  const [state,setState]=useState<CameraScannerState>('idle');
+  const [cameraError,setCameraError]=useState('');
+  const [torch,setTorch]=useState(false);
+  const [torchSupported,setTorchSupported]=useState(false);
 
-  async function checkBridge(){
-    try{const r=await fetch(`${SCANNER_BRIDGE}/health`,{signal:AbortSignal.timeout(2500)});if(!r.ok)throw new Error();setBridgeOk(true);setBridgeMessage('Scanner bridge connected');}
-    catch{setBridgeOk(false);setBridgeMessage('Scanner bridge not connected. Start scanner-bridge on this Windows PC.');}
-  }
-  useEffect(()=>{checkBridge();api('/folders').then((x:any)=>setFolders(Array.isArray(x)?x:[])).catch(()=>{})},[]);
+  useEffect(()=>()=>{streamRef.current?.getTracks().forEach(t=>t.stop())},[]);
 
-  async function scan(){
+  async function startCamera(){
     try{
-      setErr('');setBusy(true);
-      const health=await fetch(`${SCANNER_BRIDGE}/health`,{signal:AbortSignal.timeout(2500)});
-      if(!health.ok)throw new Error('Scanner bridge is not connected. Start the SecureFile Scanner Bridge on this Windows workstation.');
-      setBridgeOk(true);setBridgeMessage('Scanner bridge connected');
-      const r=await fetch(`${SCANNER_BRIDGE}/scan`,{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({source,pages:source==='FLATBED'?1:Math.max(1,Math.min(100,batchPages)),resolutionDpi:resolution,colorMode,duplex:source==='ADF'&&duplex})});
-      const d:any=await r.json().catch(()=>({}));
-      if(!r.ok)throw new Error(d?.error||'Scanner failed.');
-      const incoming=(d.pages||[]).map((x:any)=>({id:crypto.randomUUID(),name:x.name,mimeType:x.mimeType||'image/jpeg',data:x.data})) as ScanPage[];
-      if(!incoming.length)throw new Error('The scanner returned no pages.');
-      setPages(prev=>[...prev,...incoming]);setBridgeOk(true);setBridgeMessage(`${incoming.length} page${incoming.length===1?'':'s'} scanned. ${pages.length+incoming.length} total ready.`);
-    }catch(e:any){setErr(e.message||'Scanner failed.');setBridgeOk(false);setBridgeMessage('Scanner error. Check the scanner, driver, and bridge.')}finally{setBusy(false)}
+      setCameraError('');setState('starting');
+      if(!navigator.mediaDevices?.getUserMedia)throw new Error('Camera scanning is not supported by this browser. Please use the latest Chrome, Safari, or Edge over HTTPS.');
+      streamRef.current?.getTracks().forEach(t=>t.stop());
+      const stream=await navigator.mediaDevices.getUserMedia({video:{facingMode:{ideal:'environment'},width:{ideal:1920},height:{ideal:1080}},audio:false});
+      streamRef.current=stream;
+      const track=stream.getVideoTracks()[0];
+      const caps=(track.getCapabilities?.()||{}) as any;
+      setTorchSupported(Boolean(caps.torch));
+      if(videoRef.current){videoRef.current.srcObject=stream;await videoRef.current.play();}
+      setState('ready');
+    }catch(e:any){setState('idle');setCameraError(e?.name==='NotAllowedError'?'Camera permission was denied. Allow camera access for SecureFile and try again.':e?.message||'Unable to start the camera.');}
   }
-
-  function removePage(id:string){setPages(prev=>prev.filter(p=>p.id!==id));}
-  function movePage(index:number,direction:-1|1){setPages(prev=>{const next=[...prev],to=index+direction;if(to<0||to>=next.length)return prev;[next[index],next[to]]=[next[to],next[index]];return next});}
-  function clearPages(){if(confirm('Remove all scanned pages from this draft?'))setPages([])}
-
-  function base64ToBlob(data:string,mime='image/jpeg'){
-    const binary=atob(data);const bytes=new Uint8Array(binary.length);for(let i=0;i<binary.length;i++)bytes[i]=binary.charCodeAt(i);return new Blob([bytes],{type:mime});
+  function stopCamera(){streamRef.current?.getTracks().forEach(t=>t.stop());streamRef.current=null;if(videoRef.current)videoRef.current.srcObject=null;setTorch(false);setState('idle')}
+  async function toggleTorch(){
+    const track=streamRef.current?.getVideoTracks()[0]; if(!track||!torchSupported)return;
+    try{await track.applyConstraints({advanced:[{torch:!torch}]} as any);setTorch(v=>!v)}catch{setCameraError('This phone camera does not allow the flashlight to be controlled from the browser.')}
   }
-  async function savePdf(){
-    if(!pages.length)return;
+  async function capture(){
+    const video=videoRef.current;if(!video||video.readyState<2)return;
     try{
-      setSaving(true);setErr('');
-      const name=(pdfName.trim()||'Scanned Document').replace(/\.pdf$/i,'')+'.pdf';
-      const pdfBlob=jpegPagesToPdfBlob(pages);
-      const pdfFile=new File([pdfBlob],name,{type:'application/pdf'});
-      await directUpload(pdfFile,{folderId:folderId||undefined,source:'SCAN',name});
-      setPages([]);setPdfName('Scanned Document.pdf');setErr('');setBridgeMessage(`Saved ${name} to SecureFile.`);
-    }catch(e:any){setErr(e.message||'Unable to create or save PDF.')}finally{setSaving(false)}
+      setState('capturing');
+      const canvas=document.createElement('canvas');
+      canvas.width=video.videoWidth||1280;canvas.height=video.videoHeight||1920;
+      const ctx=canvas.getContext('2d');if(!ctx)throw new Error('Camera capture is unavailable.');
+      ctx.drawImage(video,0,0,canvas.width,canvas.height);
+      const blob=await new Promise<Blob>((resolve,reject)=>canvas.toBlob(b=>b?resolve(b):reject(new Error('Could not capture the camera frame.')),'image/jpeg',0.94));
+      const reader=new FileReader();
+      const data=await new Promise<string>((resolve,reject)=>{reader.onload=()=>resolve(String(reader.result||'').split(',')[1]||'');reader.onerror=()=>reject(new Error('Could not read the captured page.'));reader.readAsDataURL(blob)});
+      if(!data)throw new Error('Camera returned an empty image.');
+      onPage({id:crypto.randomUUID(),name:`camera-page-${Date.now()}.jpg`,mimeType:'image/jpeg',data});
+      setState('ready');
+    }catch(e:any){setCameraError(e?.message||'Could not capture this page.');setState('ready')}
   }
-
-  return <div className="scanner-workspace">
-    <div className="panel">
-      <div className="scanner-status-row"><div><h2 style={{marginBottom:4}}>Physical Scanner</h2><p className="muted">The browser connects to the SecureFile Scanner Bridge running on the same Windows PC as the scanner.</p></div><span className={`scanner-status ${bridgeOk===true?'ok':bridgeOk===false?'bad':''}`}>{bridgeOk===true?<Wifi size={14}/>:<WifiOff size={14}/>} {bridgeMessage}</span></div>
-      <div className="scanner-controls grid2">
-        <label>Scanner source<select value={source} onChange={e=>setSource(e.target.value as any)}><option value="ADF">ADF / Document Feeder</option><option value="FLATBED">Flatbed</option></select></label>
-        <label>Pages per scan batch<input type="number" min="1" max="100" value={batchPages} disabled={source==='FLATBED'} onChange={e=>setBatchPages(Math.max(1,Math.min(100,+e.target.value||1)))}/><small className="muted">ADF scans up to 100 pages per batch. Use Scan More for any total page count.</small></label>
-        <label>Resolution<select value={resolution} onChange={e=>setResolution(+e.target.value)}><option value="150">150 DPI</option><option value="200">200 DPI</option><option value="300">300 DPI</option><option value="600">600 DPI</option></select></label>
-        <label>Color mode<select value={colorMode} onChange={e=>setColorMode(e.target.value)}><option value="COLOR">Color</option><option value="GRAY">Grayscale</option><option value="BW">Black & White</option></select></label>
-      </div>
-      {source==='ADF'&&<label className="checkline scanner-duplex"><input type="checkbox" checked={duplex} onChange={e=>setDuplex(e.target.checked)}/> Scan both sides (duplex) when the scanner driver supports it</label>}
-      <div className="toolbar scanner-actions"><button className="btn" disabled={busy||saving} onClick={scan}><ScanLine size={16}/>{busy?'Scanning...':pages.length?'Scan More Pages':'Start Scan'}</button><button className="btn secondary" disabled={busy} onClick={checkBridge}>Check connection</button><span className="muted">{pages.length} page{pages.length===1?'':'s'} in current PDF</span></div>
-    </div>
-
-    <div className="panel">
-      <div className="scanner-preview-head"><div><h2>Scanned Pages</h2><p className="muted">Review, remove, or reorder pages before creating the final PDF.</p></div>{pages.length>0&&<button className="btn secondary" onClick={clearPages}>Clear all</button>}</div>
-      {!pages.length?<div className="scanner-empty"><ScanLine size={34}/><b>No scanned pages yet</b><span>Load pages from your physical scanner. You can scan more batches before saving.</span></div>:<div className="scan-pages-grid">{pages.map((p,i)=><div className="scan-page-card" key={p.id}><div className="scan-page-image"><img src={`data:image/jpeg;base64,${p.data}`} alt={`Scanned page ${i+1}`}/><span>Page {i+1}</span></div><div className="scan-page-actions"><button className="icon-btn" title="Move left" disabled={i===0} onClick={()=>movePage(i,-1)}><ChevronLeft size={14}/></button><button className="icon-btn" title="Move right" disabled={i===pages.length-1} onClick={()=>movePage(i,1)}><ChevronRight size={14}/></button><button className="icon-btn danger" title="Remove page" onClick={()=>removePage(p.id)}><Trash2 size={14}/></button></div></div>)}</div>}
-    </div>
-
-    <div className="panel scanner-save-panel">
-      <div><h2>Save as one PDF</h2><p className="muted">Other company users cannot see the saved file unless you share it or grant permission. Company Admins retain administrative access.</p></div>
-      <div className="grid2"><label>PDF file name<input value={pdfName} onChange={e=>setPdfName(e.target.value)} placeholder="e.g. Patient Records August 21.pdf"/></label><label>Save in folder<select value={folderId} onChange={e=>setFolderId(e.target.value)}><option value="">My visible root</option>{folders.map(f=><option key={f.id} value={f.id}>{f.name}{f.isPersonal?' (Personal)':''}</option>)}</select></label></div>
-      <div className="toolbar"><button className="btn" disabled={!pages.length||saving} onClick={savePdf}>{saving?'Creating PDF...':'Create PDF & Save'}</button><span className="muted">{pages.length?`${pages.length} pages will be combined into ${((pdfName.trim()||'Scanned Document').replace(/\.pdf$/i,'')+'.pdf')}`:'Scan pages first.'}</span></div>
-    </div>
+  return <div className="mobile-camera-card">
+    <div className="mobile-scan-heading"><div><h3>Scan with phone camera</h3><p className="muted">Use the rear camera to capture one or more document pages directly in SecureFile.</p></div><Camera size={20}/></div>
+    {cameraError&&<div className="camera-error">{cameraError}</div>}
+    {state==='idle'?<button className="btn mobile-primary-action" disabled={busy} onClick={startCamera}><Camera size={17}/> Open Camera Scanner</button>:<>
+      <div className="camera-viewfinder"><video ref={videoRef} playsInline muted autoPlay/><div className="camera-corners"/><span className="camera-guide-label">Fit the full page inside the guide</span></div>
+      <div className="camera-toolbar"><button className="btn" disabled={state!=='ready'||busy} onClick={capture}><Camera size={17}/> Capture Page</button>{torchSupported&&<button className="btn secondary" disabled={state!=='ready'} onClick={toggleTorch}>{torch?<FlashlightOff size={16}/>:<Flashlight size={16}/>} {torch?'Flash off':'Flash'}</button>}<button className="btn secondary" onClick={stopCamera}>Close</button></div>
+      <p className="camera-hint">Capture each page, review the thumbnails below, then create one PDF.</p>
+    </>}
   </div>
 }
 
-function AI({setErr}:any){const [q,setQ]=useState(''),[a,setA]=useState('');async function ask(){try{const d=await api('/workspace/ai',{method:'POST',body:JSON.stringify({message:q})});setA(d.answer)}catch(e:any){setErr(e.message)}}return <div className="panel"><h2>SecureFile AI</h2><div className="toolbar"><input value={q} onChange={e=>setQ(e.target.value)} placeholder="Ask something..."/><button className="btn" onClick={ask}><Send size={15}/> Ask</button></div>{a&&<div className="data">{a}</div>}</div>}
-function Chat({users}:any){
+function BluetoothScanner({onPage,onError,busy}:any){
+  const [device,setDevice]=useState<any>(null);const [connected,setConnected]=useState(false);const [status,setStatus]=useState('Not connected');const [supported,setSupported]=useState(true);const bufferRef=useRef<Uint8Array>(new Uint8Array());const listenersRef=useRef<any[]>([]);
+  useEffect(()=>{setSupported(Boolean((navigator as any).bluetooth));return()=>{void disconnect()}},[]);
+  function appendBytes(incoming:Uint8Array){
+    let buf=new Uint8Array(bufferRef.current.length+incoming.length);buf.set(bufferRef.current);buf.set(incoming,bufferRef.current.length);bufferRef.current=buf;
+    while(true){
+      let start=-1,end=-1;for(let i=0;i<buf.length-1;i++){if(buf[i]===0xff&&buf[i+1]===0xd8){start=i;break}}
+      if(start<0){if(buf.length>1024*1024*8)bufferRef.current=buf.slice(-1024);return}
+      for(let i=start+2;i<buf.length-1;i++){if(buf[i]===0xff&&buf[i+1]===0xd9){end=i+2;break}}
+      if(end<0){bufferRef.current=buf.slice(start);return}
+      const jpeg=buf.slice(start,end);buf=buf.slice(end);bufferRef.current=buf;
+      let binary='';const chunk=0x8000;for(let i=0;i<jpeg.length;i+=chunk)binary+=String.fromCharCode(...jpeg.subarray(i,i+chunk));
+      onPage({id:crypto.randomUUID(),name:`bluetooth-scan-${Date.now()}.jpg`,mimeType:'image/jpeg',data:btoa(binary)});
+    }
+  }
+  async function discover(server:any){
+    const services=await server.getPrimaryServices();let count=0;
+    for(const service of services){
+      const chars=await service.getCharacteristics();
+      for(const ch of chars){
+        if(ch.properties.notify||ch.properties.indicate){await ch.startNotifications();const handler=(ev:any)=>{const v=ev.target?.value;if(v)appendBytes(new Uint8Array(v.buffer,v.byteOffset,v.byteLength))};ch.addEventListener('characteristicvaluechanged',handler);listenersRef.current.push({ch,handler});count++}
+        else if(ch.properties.read){try{const v=await ch.readValue();if(v?.byteLength)appendBytes(new Uint8Array(v.buffer,v.byteOffset,v.byteLength))}catch{/* proprietary/read-on-demand characteristic */}}
+      }
+    }
+    return count;
+  }
+  async function connect(){
+    try{
+      if(!supported)throw new Error('Bluetooth is not available in this mobile browser. Use Chrome/Edge on Android with a BLE scanner, or use the phone camera scanner.');
+      setStatus('Choose your Bluetooth scanner…');
+      const d=await (navigator as any).bluetooth.requestDevice({acceptAllDevices:true});
+      setDevice(d);d.addEventListener?.('gattserverdisconnected',()=>{setConnected(false);setStatus('Scanner disconnected')});
+      setStatus('Connecting…');const server=await d.gatt.connect();
+      const count=await discover(server);setConnected(true);setStatus(count?`Connected • listening on ${count} scan channel${count===1?'':'s'}`:'Connected • scanner protocol not exposed by this device');
+      if(!count)onError('Bluetooth scanner connected, but it does not expose scan data through a browser-readable BLE characteristic. Many scanners use proprietary Bluetooth profiles; use the phone camera scanner or the vendor/WIA bridge for those devices.');
+    }catch(e:any){setConnected(false);setStatus('Not connected');if(e?.name!=='NotFoundError')onError(e?.message||'Unable to connect to the Bluetooth scanner.')}
+  }
+  async function disconnect(){for(const {ch,handler} of listenersRef.current){try{ch.removeEventListener('characteristicvaluechanged',handler);await ch.stopNotifications()}catch{}}listenersRef.current=[];try{if(device?.gatt?.connected)device.gatt.disconnect()}catch{}setConnected(false);setDevice(null);setStatus('Not connected');bufferRef.current=new Uint8Array()}
+  return <div className="mobile-bluetooth-card">
+    <div className="mobile-scan-heading"><div><h3>Bluetooth scanner</h3><p className="muted">Connect a BLE scanner from the phone browser when the scanner exposes its scan data over Web Bluetooth.</p></div><Bluetooth size={20}/></div>
+    <div className={`bluetooth-status ${connected?'connected':''}`}><span className="status-dot"/>{status}</div>
+    {!supported&&<div className="camera-error">Web Bluetooth is not available here. Camera scanning remains available.</div>}
+    <div className="camera-toolbar"><button className="btn" disabled={busy||connected||!supported} onClick={connect}><Bluetooth size={16}/> Connect Bluetooth Scanner</button>{connected&&<button className="btn secondary" onClick={disconnect}><Link2Off size={16}/> Disconnect</button>}</div>
+    <p className="camera-hint">Note: standard Bluetooth document scanners often use proprietary profiles. Chrome can only receive scan images when the device exposes a BLE GATT data characteristic.</p>
+  </div>
+}
+
+function ScannerModule({setErr}:any){
+  const [bridgeOk,setBridgeOk]=useState<boolean|null>(null);const [pages,setPages]=useState<ScanPage[]>([]);const [busy,setBusy]=useState(false);const [saving,setSaving]=useState(false);const [source,setSource]=useState<'ADF'|'FLATBED'>('ADF');const [batchPages,setBatchPages]=useState(25);const [resolution,setResolution]=useState(300);const [colorMode,setColorMode]=useState('COLOR');const [duplex,setDuplex]=useState(false);const [folderId,setFolderId]=useState('');const [folders,setFolders]=useState<any[]>([]);const [pdfName,setPdfName]=useState('Scanned Document.pdf');const [bridgeMessage,setBridgeMessage]=useState('Checking scanner bridge...');
+  const [devices,setDevices]=useState<any[]>([]);const [selectedDevice,setSelectedDevice]=useState<any>(null);const [driver,setDriver]=useState<'AUTO'|'WIA'|'TWAIN'|'ESCL'>('AUTO');const [loadingDevices,setLoadingDevices]=useState(false);
+  async function checkBridge(){try{const r=await fetch(`${SCANNER_BRIDGE}/health`,{signal:AbortSignal.timeout(2500)});if(!r.ok)throw new Error();const h:any=await r.json().catch(()=>({}));setBridgeOk(true);setBridgeMessage(h.naps2Installed?'Universal scanner bridge connected':'WIA scanner bridge connected')}catch{setBridgeOk(false);setBridgeMessage('Scanner bridge not connected. Start scanner-bridge on this Windows PC.')}}
+  async function refreshDevices(){setLoadingDevices(true);try{const r=await fetch(`${SCANNER_BRIDGE}/devices`,{signal:AbortSignal.timeout(30000)});const d:any=await r.json().catch(()=>({}));if(!r.ok)throw new Error(d?.error||'Unable to list scanners.');const list=Array.isArray(d.devices)?d.devices:[];setDevices(list);if(list.length&&!selectedDevice)setSelectedDevice(list[0]);if(!list.length)setSelectedDevice(null);setBridgeOk(true);setBridgeMessage(list.length?`${list.length} scanner device${list.length===1?'':'s'} available.`:'Bridge connected, but no scanner was detected.')}catch(e:any){setErr(e.message||'Unable to list scanner devices.');setBridgeOk(false);setBridgeMessage('Scanner device discovery failed.')}finally{setLoadingDevices(false)}}
+  useEffect(()=>{checkBridge();refreshDevices();api('/folders').then((x:any)=>setFolders(Array.isArray(x)?x:[])).catch(()=>{})},[]);
+  async function scan(){try{setErr('');setBusy(true);const health=await fetch(`${SCANNER_BRIDGE}/health`,{signal:AbortSignal.timeout(2500)});if(!health.ok)throw new Error('Scanner bridge is not connected. Start the SecureFile Scanner Bridge on this Windows workstation.');if(!selectedDevice)throw new Error('Select a scanner device first. Click Refresh scanners if the device is not listed.');const effectiveDriver=driver==='AUTO'?'auto':driver.toLowerCase();const deviceValue=String(selectedDevice.id||selectedDevice.name||'');const deviceName=String(selectedDevice.name||'');const r=await fetch(`${SCANNER_BRIDGE}/scan`,{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({driver:effectiveDriver,device:deviceValue,deviceName,source,pages:source==='FLATBED'?1:Math.max(1,Math.min(100,batchPages)),resolutionDpi:resolution,colorMode,duplex:source==='ADF'&&duplex})});const d:any=await r.json().catch(()=>({}));if(!r.ok)throw new Error(d?.error||'Scanner failed.');const incoming=(d.pages||[]).map((x:any)=>({id:crypto.randomUUID(),name:x.name,mimeType:x.mimeType||'image/jpeg',data:x.data})) as ScanPage[];if(!incoming.length)throw new Error('The scanner returned no pages.');setPages(prev=>[...prev,...incoming]);setBridgeOk(true);setBridgeMessage(`${incoming.length} page${incoming.length===1?'':'s'} scanned successfully via ${String(d.driver||effectiveDriver).toUpperCase()}.`)}catch(e:any){setErr(e.message||'Scanner failed.');setBridgeMessage('Scanner error. Check the selected device, driver, paper, and bridge.')}finally{setBusy(false)}}
+  function addCameraPage(page:ScanPage){setPages(prev=>[...prev,page]);setErr('')}
+  function removePage(id:string){setPages(prev=>prev.filter(p=>p.id!==id))}function movePage(index:number,direction:-1|1){setPages(prev=>{const next=[...prev],to=index+direction;if(to<0||to>=next.length)return prev;[next[index],next[to]]=[next[to],next[index]];return next})}function clearPages(){if(confirm('Remove all scanned pages from this draft?'))setPages([])}
+  async function savePdf(){if(!pages.length)return;try{setSaving(true);setErr('');const name=(pdfName.trim()||'Scanned Document').replace(/\.pdf$/i,'')+'.pdf';const pdfBlob=jpegPagesToPdfBlob(pages);const pdfFile=new File([pdfBlob],name,{type:'application/pdf'});await directUpload(pdfFile,{folderId:folderId||undefined,source:'SCAN',name});setPages([]);setPdfName('Scanned Document.pdf');setErr('');setBridgeMessage(`Saved ${name} to SecureFile.`)}catch(e:any){setErr(e.message||'Unable to create or save PDF.')}finally{setSaving(false)}}
+  return <div className="scanner-workspace">
+    <div className="panel desktop-scanner-panel">
+      <div className="scanner-status-row"><div><h2 style={{marginBottom:4}}>Physical Scanner</h2><p className="muted">The browser connects to the SecureFile Scanner Bridge running on the same Windows PC as the scanner.</p></div><span className={`scanner-status ${bridgeOk===true?'ok':bridgeOk===false?'bad':''}`}>{bridgeOk===true?<Wifi size={14}/>:<WifiOff size={14}/>} {bridgeMessage}</span></div>
+      <div className="scanner-controls grid2"><label>Scanner / device<select value={selectedDevice?JSON.stringify({id:selectedDevice.id,name:selectedDevice.name,driver:selectedDevice.driver}):''} onChange={e=>{try{const v=JSON.parse(e.target.value);setSelectedDevice(devices.find((d:any)=>d.id===v.id&&d.name===v.name&&d.driver===v.driver)||null)}catch{setSelectedDevice(null)}}}><option value="">Select scanner device</option>{devices.map((d:any,i:number)=><option key={`${d.driver}-${d.id}-${i}`} value={JSON.stringify({id:d.id,name:d.name,driver:d.driver})}>{d.name}{d.manufacturer?` — ${d.manufacturer}`:''} ({String(d.driver||'WIA').toUpperCase()})</option>)}</select></label><label>Driver<select value={driver} onChange={e=>setDriver(e.target.value as any)}><option value="AUTO">Auto (recommended)</option><option value="WIA">WIA</option><option value="TWAIN">TWAIN</option><option value="ESCL">eSCL / Network</option></select><small className="muted">TWAIN/eSCL use NAPS2. WIA has a direct Windows fallback.</small></label><label>Scanner source<select value={source} onChange={e=>setSource(e.target.value as any)}><option value="ADF">ADF / Document Feeder</option><option value="FLATBED">Flatbed</option></select></label><label>Pages per scan batch<input type="number" min="1" max="100" value={batchPages} disabled={source==='FLATBED'} onChange={e=>setBatchPages(Math.max(1,Math.min(100,+e.target.value||1)))}/><small className="muted">ADF scans up to 100 pages per batch. Use Scan More for any total page count.</small></label><label>Resolution<select value={resolution} onChange={e=>setResolution(+e.target.value)}><option value="150">150 DPI</option><option value="200">200 DPI</option><option value="300">300 DPI</option><option value="600">600 DPI</option></select></label><label>Color mode<select value={colorMode} onChange={e=>setColorMode(e.target.value)}><option value="COLOR">Color</option><option value="GRAY">Grayscale</option><option value="BW">Black & White</option></select></label></div>
+      {source==='ADF'&&<label className="checkline scanner-duplex"><input type="checkbox" checked={duplex} onChange={e=>setDuplex(e.target.checked)}/> Scan both sides (duplex) when the scanner driver supports it</label>}
+      <div className="toolbar scanner-actions"><button className="btn secondary" disabled={busy||loadingDevices} onClick={refreshDevices}><RefreshCw size={15}/>{loadingDevices?'Finding scanners...':'Refresh scanners'}</button><button className="btn" disabled={busy||saving||!selectedDevice} onClick={scan}><ScanLine size={16}/>{busy?'Scanning...':pages.length?'Scan More Pages':'Start Scan'}</button><button className="btn secondary" disabled={busy} onClick={checkBridge}>Check connection</button><span className="muted">{pages.length} page{pages.length===1?'':'s'} in current PDF</span></div>
+    </div>
+
+    <div className="mobile-scanner-panel">
+      <div className="mobile-scanner-title"><div><p className="eyebrow">Mobile scanning</p><h2>Scan from your phone</h2><p className="muted">Choose your phone camera or connect a compatible BLE scanner. Both methods add pages to the same PDF draft.</p></div><ScanLine size={24}/></div>
+      <MobileCameraScanner busy={busy||saving} onPage={addCameraPage} onError={setErr}/>
+      <BluetoothScanner busy={busy||saving} onPage={addCameraPage} onError={setErr}/>
+    </div>
+
+    <div className="panel"><div className="scanner-preview-head"><div><h2>Scanned Pages</h2><p className="muted">Review, remove, or reorder pages before creating the final PDF.</p></div>{pages.length>0&&<button className="btn secondary" onClick={clearPages}>Clear all</button>}</div>{!pages.length?<div className="scanner-empty"><ScanLine size={34}/><b>No scanned pages yet</b><span>Use the Windows scanner above or scan from your phone.</span></div>:<div className="scan-pages-grid">{pages.map((p,i)=><div className="scan-page-card" key={p.id}><div className="scan-page-image"><img src={`data:${p.mimeType};base64,${p.data}`} alt={`Scanned page ${i+1}`}/><span>Page {i+1}</span></div><div className="scan-page-actions"><button className="icon-btn" title="Move left" disabled={i===0} onClick={()=>movePage(i,-1)}><ChevronLeft size={14}/></button><button className="icon-btn" title="Move right" disabled={i===pages.length-1} onClick={()=>movePage(i,1)}><ChevronRight size={14}/></button><button className="icon-btn danger" title="Remove page" onClick={()=>removePage(p.id)}><Trash2 size={14}/></button></div></div>)}</div>}</div>
+    <div className="panel scanner-save-panel"><div><h2>Save as one PDF</h2><p className="muted">Other company users cannot see the saved file unless you share it or grant permission. Company Admins retain administrative access.</p></div><div className="grid2"><label>PDF file name<input value={pdfName} onChange={e=>setPdfName(e.target.value)} placeholder="e.g. Patient Records August 21.pdf"/></label><label>Save in folder<select value={folderId} onChange={e=>setFolderId(e.target.value)}><option value="">My visible root</option>{folders.map(f=><option key={f.id} value={f.id}>{f.name}{f.isPersonal?' (Personal)':''}</option>)}</select></label></div><div className="toolbar"><button className="btn" disabled={!pages.length||saving} onClick={savePdf}>{saving?'Creating PDF...':'Create PDF & Save'}</button><span className="muted">{pages.length?`${pages.length} pages will be combined into ${((pdfName.trim()||'Scanned Document').replace(/\.pdf$/i,'')+'.pdf')}`:'Scan pages first.'}</span></div></div>
+  </div>
+}
+
+function AI({setErr}:any){const [q,setQ]=useState(''),[messages,setMessages]=useState<any[]>([]),[busy,setBusy]=useState(false),[webSearch,setWebSearch]=useState(true);async function ask(){const text=q.trim();if(!text||busy)return;const history=messages.map(x=>({role:x.role,content:x.content}));setMessages(m=>[...m,{role:'user',content:text}]);setQ('');setBusy(true);try{const d=await api('/workspace/ai',{method:'POST',body:JSON.stringify({message:text,history,webSearchEnabled:webSearch})});setMessages(m=>[...m,{role:'assistant',content:d.answer,sources:d.sources||[],webSearched:Boolean(d.webSearched)}]);}catch(e:any){setErr(e.message);setMessages(m=>[...m,{role:'assistant',content:'I could not complete that request. Please try again.'}]);}finally{setBusy(false)}}return <div className="ai-shell"><div className="panel ai-panel"><div className="ai-head"><div><h2 style={{marginBottom:4}}>SecureFile AI</h2><p className="muted">Your private SecureFile assistant. It only uses resources available to your current login.</p></div><label className="ai-web-toggle"><input type="checkbox" checked={webSearch} onChange={e=>setWebSearch(e.target.checked)}/><span>Web search when needed</span></label></div><div className="ai-safety">🔒 Your SecureFile data stays scoped to your account. Other users' private files and workspace data are not included.</div><div className="ai-messages">{!messages.length&&<div className="ai-empty"><Send size={24}/><h3>Ask SecureFile AI</h3><p>Try: “What files do I have?”, “What tasks are due?”, “How do I send a fax?” or ask a general question.</p></div>}{messages.map((m,i)=><div key={i} className={`ai-message ${m.role==='user'?'user':'assistant'}`}><div className="ai-bubble">{m.content}</div>{m.webSearched&&m.sources?.length>0&&<div className="ai-sources"><span>Web sources</span>{m.sources.map((x:any,j:number)=><a key={j} href={x.url} target="_blank" rel="noreferrer">{x.url}</a>)}</div>}</div>)}{busy&&<div className="ai-message assistant"><div className="ai-bubble ai-typing">Thinking…</div></div>}</div><div className="ai-composer"><textarea value={q} onChange={e=>setQ(e.target.value)} onKeyDown={e=>{if(e.key==='Enter'&&!e.shiftKey){e.preventDefault();ask()}}} placeholder="Ask about your SecureFile workspace or anything else…" rows={2}/><button className="btn" disabled={!q.trim()||busy} onClick={ask}><Send size={15}/>{busy?'Thinking…':'Ask'}</button></div></div></div>}
+function Chat({users: initialUsers}:any){
+  const [users,setUsers]=useState<any[]>(initialUsers||[]);
   const me=localStorage.getItem('sf_user_id');
   const [mode,setMode]=useState<'chat'|'group'|'mail'>('chat');
   const [to,setTo]=useState(''),[groupId,setGroupId]=useState(''),[body,setBody]=useState('');
@@ -163,7 +307,7 @@ function Chat({users}:any){
     else if(mode==='group'&&groupId)setMessages(await api('/workspace/messages?groupId='+encodeURIComponent(groupId)));
   }catch{}}
   async function loadEmails(){try{setEmails(await api('/workspace/emails?box='+mailBox))}catch{}}
-  useEffect(()=>{loadGroups()},[]);
+  useEffect(()=>{Promise.all([initialUsers?.length?Promise.resolve(initialUsers):api('/users'),api('/workspace/groups')]).then(([u,g])=>{setUsers(u||[]);setGroups(g||[])}).catch(()=>{})},[]);
   useEffect(()=>{loadMessages()},[mode,to,groupId]);
   useEffect(()=>{if(mode==='mail')loadEmails()},[mode,mailBox]);
 

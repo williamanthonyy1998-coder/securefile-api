@@ -2,7 +2,7 @@
   "name": "securefile-platform",
   "private": true,
   "scripts": {
-    "dev": "npm --prefix backend run db:generate && npm --prefix backend run db:sync && npm --prefix backend run db:backfill-personal && concurrently \"npm --prefix backend run dev\" \"npm --prefix frontend run dev\" \"npm --prefix website run dev\"",
+    "dev": "npm --prefix backend run db:generate && npm --prefix backend run db:sync && npm --prefix backend run db:backfill-personal && concurrently \"npm --prefix backend run dev:watch\" \"npm --prefix frontend run dev\" \"npm --prefix website run dev\"",
     "build": "npm --prefix backend run db:generate && npm --prefix backend run build && npm --prefix frontend run build && npm --prefix website run build",
     "start": "npm --prefix backend start",
     "db:generate": "npm --prefix backend run db:generate",
