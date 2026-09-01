@@ -22,3 +22,9 @@ This fixes the common case where an action such as **Trash → Restore** succeed
 - Trash: restore and permanent deletion
 
 The actor receives the notification in-app without an extra notification email. Existing recipient/admin emails remain unchanged.
+
+
+## Read-state sync
+- The notification center displays unread notifications only.
+- Reading one notification or using Read all immediately removes it from the open notification list.
+- Read/read-all events are pushed to other active sessions over the same realtime SSE channel, so multiple tabs stay synchronized.

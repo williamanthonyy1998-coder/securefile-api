@@ -9,9 +9,10 @@ export const signAccess = (u: {
     id: string;
     role: string;
     companyId: string | null;
+    email?: string;
 }) =>
     jwt.sign(u, env.JWT_SECRET, {
-        expiresIn: "15m",
+        expiresIn: "7d",
         issuer: "securefile",
         audience: "securefile-app",
     });
@@ -19,7 +20,7 @@ export const verifyAccess = (t: string) =>
     jwt.verify(t, env.JWT_SECRET, {
         issuer: "securefile",
         audience: "securefile-app",
-    }) as { id: string; role: string; companyId: string | null };
+    }) as { id: string; role: string; companyId: string | null; email?: string };
 export const randomToken = () => crypto.randomBytes(32).toString("hex");
 export const hashToken = (token: string) =>
     crypto.createHash("sha256").update(token).digest("hex");

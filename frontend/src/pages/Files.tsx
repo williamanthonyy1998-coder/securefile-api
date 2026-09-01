@@ -53,7 +53,7 @@ export default function Files() {
   }
 
   useEffect(() => { load(); }, [folderId, sp]);
-  useEffect(() => { api('/companies/me').then((c:any)=>setAddons(c.subscription?.addons||{})).catch(()=>{}); }, []);
+  useEffect(() => { try { setAddons(JSON.parse(localStorage.getItem('sf_addons') || '{}')); } catch {} }, []);
   useEffect(() => () => { if (preview) URL.revokeObjectURL(preview); }, [preview]);
 
   async function upload() {

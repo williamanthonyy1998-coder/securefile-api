@@ -25,3 +25,9 @@ This update keeps the existing notification system and expands event coverage wi
 Important notifications continue to be mirrored to email where configured. Email failures are best-effort and never break the underlying SecureFile action.
 
 No Docker requirement and no database reset are introduced by this update.
+
+
+## Read-state sync
+- The notification center displays unread notifications only.
+- Reading one notification or using Read all immediately removes it from the open notification list.
+- Read/read-all events are pushed to other active sessions over the same realtime SSE channel, so multiple tabs stay synchronized.
