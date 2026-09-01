@@ -9,6 +9,7 @@ import { requireAddon } from '../services/entitlements';
 import { safeFilename } from '../utils/security';
 import { putObject, deleteObject } from '../services/storage';
 import { notify } from '../services/notify';
+import { NotificationType } from '@prisma/client';
 import { getPhaxioFaxFile } from '../services/fax';
 
 const upload = multer({ storage: multer.memoryStorage(), limits: { fileSize: env.MAX_UPLOAD_MB * 1024 * 1024 } });
@@ -85,7 +86,7 @@ r.post('/fax/inbound', upload.single('file'), async (req, res) => {
   const f = await db.file.create({ data: { companyId, ownerId: userId, name: safeFilename(req.file.originalname || 'Incoming Fax.pdf'), storageKey: key, mimeType: req.file.mimetype || 'application/pdf', sizeBytes: req.file.size, source: 'FAX' } });
   await db.company.update({ where: { id: companyId }, data: { storageUsedBytes: { increment: req.file.size } } });
   await db.faxJob.create({ data: { companyId, userId, direction: 'INBOUND', status: 'RECEIVED', senderNumber: String(req.body.from_number || ''), recipientNumber: String(req.body.to_number || ''), fileId: f.id, provider: 'PHAXIO', providerRef: req.body.id ? String(req.body.id) : null, pages: req.body.num_pages ? Number(req.body.num_pages) : null } });
-  await notify(userId, 'New fax received', `A new fax was received on your personal fax number.`, companyId, undefined, true);
+  await notify(userId, 'New fax received', `A new fax was received on your personal fax number.`, companyId, NotificationType.FAX_RECEIVED, true);
   res.status(201).json({ id: f.id });
 });
 
@@ -106,7 +107,11 @@ r.post('/fax/webhook', upload.single('file'), async (req, res) => {
     const direction = String(req.body.direction || providerFax.direction || '').toLowerCase();
     const faxId = String(req.body.id || req.body.fax_id || providerFax.id || '').trim();
     const status = String(req.body.status || providerFax.status || '').toLowerCase();
-    const success = String(req.body.success || '').toLowerCase() === 'true' || status === 'success';
+    const successRaw=req.body.success;
+    const recipientStatus=Array.isArray(providerFax.recipients)
+      ? String(providerFax.recipients[0]?.status||'').toLowerCase()
+      : '';
+    const success = successRaw === true || String(successRaw||'').toLowerCase() === 'true' || status === 'success' || recipientStatus === 'success';
 
     if (direction === 'received' || req.file) {
       const toNumber = String(req.body.to_number || providerFax.to_number || providerFax.recipient_phone_number || '').trim();
@@ -131,7 +136,7 @@ r.post('/fax/webhook', upload.single('file'), async (req, res) => {
         const f = await db.file.create({ data: { companyId: line.companyId, ownerId: line.userId, name, storageKey: key, mimeType: 'application/pdf', sizeBytes: buffer.length, source: 'FAX' } });
         await db.company.update({ where: { id: line.companyId }, data: { storageUsedBytes: { increment: buffer.length } } });
         const job = await db.faxJob.create({ data: { companyId: line.companyId, userId: line.userId, direction: 'INBOUND', status: 'RECEIVED', senderNumber: String(req.body.from_number || providerFax.from_number || '').trim() || null, recipientNumber: toNumber || null, fileId: f.id, provider: 'PHAXIO', providerRef: faxId || null, pages: req.body.num_pages ? Number(req.body.num_pages) : (providerFax.num_pages ? Number(providerFax.num_pages) : null) } });
-        await notify(line.userId, 'New fax received', `${name} was received on your personal fax number.`, line.companyId, undefined, true);
+        await notify(line.userId, 'New fax received', `${name} was received on your personal fax number.`, line.companyId, NotificationType.FAX_RECEIVED, true);
         return res.status(201).json({ ok: true, jobId: job.id, fileId: f.id });
       } catch (e) { await deleteObject(key); throw e; }
     }
@@ -142,9 +147,9 @@ r.post('/fax/webhook', upload.single('file'), async (req, res) => {
     if (!job && tagJobId) job = await db.faxJob.findFirst({ where: { id: tagJobId, direction: 'OUTBOUND' } });
     if (!job) return res.json({ ok: true, ignored: true });
 
-    const failed = (!success && eventType !== 'fax_completed') || ['failure','failed','error','error_state'].includes(status) || (eventType==='fax_completed' && status!=='success');
+    const failed = ['failure','failed','error','error_state'].includes(status) || ['failure','failed','error'].includes(recipientStatus) || (eventType==='fax_completed' && !success);
     const updated = await db.faxJob.update({ where: { id: job.id }, data: { status: failed ? 'FAILED' : 'SENT', errorMessage: failed ? (String(req.body.error_message || providerFax.error_message || req.body.error_type || providerFax.error_type || 'Fax transmission failed').slice(0,500)) : null, pages: req.body.num_pages ? Number(req.body.num_pages) : job.pages } });
-    await notify(job.userId, failed ? 'Fax delivery failed' : 'Fax delivered', failed ? `Your fax to ${job.recipientNumber || 'the recipient'} could not be delivered.` : `Your fax to ${job.recipientNumber || 'the recipient'} was delivered successfully.`, job.companyId, undefined, true);
+    await notify(job.userId, failed ? 'Fax delivery failed' : 'Fax delivered', failed ? `Your fax to ${job.recipientNumber || 'the recipient'} could not be delivered.` : `Your fax to ${job.recipientNumber || 'the recipient'} was delivered successfully.`, job.companyId, failed ? NotificationType.FAX_FAILED : NotificationType.FAX_SENT, true);
     res.json({ ok: true, jobId: updated.id, status: updated.status });
   } catch (e:any) {
     res.status(500).json({ error: e.message || 'Fax webhook processing failed' });

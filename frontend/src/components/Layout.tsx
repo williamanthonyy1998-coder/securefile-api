@@ -21,11 +21,13 @@ import {
   CheckCircle2,
   AlertCircle,
   Info,
+  Menu,
 } from "lucide-react";
 import { api, API, token } from "../lib/api";
 
 const tenantItems: Array<[string, string, any, string?]> = [
   ["dashboard", "Dashboard", Bell],
+  ["users", "User Management", UsersIcon],
   ["files", "Files", FilesIcon],
   ["module/shared", "Shared", Folder],
   ["module/trash", "Trash", Trash2],
@@ -33,7 +35,6 @@ const tenantItems: Array<[string, string, any, string?]> = [
   ["module/approvals", "Approvals", ClipboardCheck],
   ["module/task-management", "Task Management", Briefcase],
   ["module/chat", "Chat", MessageSquare],
-  ["users", "User Management", UsersIcon],
   ["module/scan-documents", "Scan Documents", ScanLine, "scanner"],
   ["module/fax-documents", "Fax Documents", Printer, "fax"],
   ["module/ai", "AI Chat Bot", Bot],
@@ -63,6 +64,7 @@ export default function Layout({ children }: { children: any }) {
   const nav = useNavigate();
 
   const [q, setQ] = useState("");
+  const [mobileNavOpen, setMobileNavOpen] = useState(false);
   const role = localStorage.getItem("sf_role") || "";
   const isSuper = role === "SUPER_ADMIN";
 
@@ -86,18 +88,20 @@ export default function Layout({ children }: { children: any }) {
   } | null>(null);
 
   useEffect(() => {
-    if (!isSuper) {
-      api("/companies/me")
-        .then((c: any) => {
-          setAddons(
-            (c.subscription?.addons || {}) as Record<string, boolean>,
-          );
-
-          if (c.subscription?.planCode) {
-            localStorage.setItem("sf_plan", c.subscription.planCode);
-          }
-        })
-        .catch(() => {});
+    if (isSuper) return;
+    try {
+      const saved = JSON.parse(localStorage.getItem("sf_addons") || "{}");
+      if (saved && typeof saved === "object") setAddons(saved);
+    } catch {}
+    // Existing sessions from older builds may not have login metadata yet.
+    // Fetch it once, then cache it locally for the rest of the session.
+    if (!localStorage.getItem("sf_addons")) {
+      api("/companies/me").then((c: any) => {
+        const a = (c.subscription?.addons || {}) as Record<string, boolean>;
+        setAddons(a);
+        localStorage.setItem("sf_addons", JSON.stringify(a));
+        if (c.subscription?.planCode) localStorage.setItem("sf_plan", c.subscription.planCode);
+      }).catch(() => {});
     }
   }, [isSuper]);
 
@@ -134,23 +138,10 @@ export default function Layout({ children }: { children: any }) {
   useEffect(() => {
     if (isSuper || !token()) return;
 
-    let alive = true;
-
-    api("/workspace/notifications")
-      .then((rows: any) => {
-        if (alive) {
-          const initial = Array.isArray(rows)
-            ? (rows as NotificationItem[])
-            : [];
-
-          notificationIds.current = new Set(initial.map((n) => n.id));
-          setNotifications(initial);
-        }
-      })
-      .catch(() => {});
-
     const pushNotification = (item: NotificationItem) => {
+      if (item.readAt) return;
       notificationIds.current.add(item.id);
+      try { window.dispatchEvent(new CustomEvent('sf:notification', { detail: JSON.stringify(item) })); } catch {}
 
       setNotifications((prev) =>
         [item, ...prev.filter((x) => x.id !== item.id)].slice(0, 100),
@@ -183,6 +174,11 @@ export default function Layout({ children }: { children: any }) {
       `${API}/realtime?token=${encodeURIComponent(token())}`,
     );
 
+    source.onerror = () => {
+      // EventSource automatically reconnects. On reconnect the server sends
+      // the unread state once; there is no notification polling.
+    };
+
     const onNotification = (event: Event) => {
       try {
         pushNotification(
@@ -193,41 +189,42 @@ export default function Layout({ children }: { children: any }) {
       } catch {}
     };
 
-    source.addEventListener("notification", onNotification);
-
-    const poll = window.setInterval(async () => {
+    const onNotificationSync = (event: Event) => {
       try {
-        const rows = await api("/workspace/notifications");
-
-        const latest = (
-          Array.isArray(rows) ? rows : []
-        ) as NotificationItem[];
-
-        for (const item of latest.slice(0, 20).reverse()) {
-          if (!notificationIds.current.has(item.id)) {
-            pushNotification(item);
-          }
-        }
-
-        setNotifications((prev) => {
-          const map = new Map<string, NotificationItem>();
-
-          for (const n of [...latest, ...prev]) {
-            if (!map.has(n.id)) {
-              map.set(n.id, n);
-            }
-          }
-
-          return [...map.values()].slice(0, 100);
-        });
+        const items = JSON.parse((event as MessageEvent).data) as NotificationItem[];
+        const unread = Array.isArray(items) ? items.filter((item) => !item.readAt) : [];
+        notificationIds.current = new Set(unread.map((item) => item.id));
+        setNotifications(unread.slice().reverse().slice(0, 100));
       } catch {}
-    }, 10000);
+    };
+
+    source.addEventListener("notification", onNotification);
+    source.addEventListener("notification-sync", onNotificationSync);
+
+    const onNotificationRead = (event: Event) => {
+      try {
+        const id = String((JSON.parse((event as MessageEvent).data) as { id?: string })?.id || '');
+        if (!id) return;
+        setNotifications((prev) => prev.filter((n) => n.id !== id));
+      } catch {}
+    };
+
+    const onNotificationsReadAll = () => {
+      setNotifications([]);
+      setToast(null);
+    };
+
+    source.addEventListener("notification-read", onNotificationRead);
+    source.addEventListener("notifications-read-all", onNotificationsReadAll);
+
+
 
     return () => {
-      alive = false;
       source.removeEventListener("notification", onNotification);
+      source.removeEventListener("notification-sync", onNotificationSync);
+      source.removeEventListener("notification-read", onNotificationRead);
+      source.removeEventListener("notifications-read-all", onNotificationsReadAll);
       source.close();
-      window.clearInterval(poll);
     };
   }, [isSuper]);
 
@@ -267,16 +264,7 @@ export default function Layout({ children }: { children: any }) {
         method: "PATCH",
       });
 
-      setNotifications((prev) =>
-        prev.map((n) =>
-          n.id === id
-            ? {
-                ...n,
-                readAt: new Date().toISOString(),
-              }
-            : n,
-        ),
-      );
+      setNotifications((prev) => prev.filter((n) => n.id !== id));
     } catch {}
   }
 
@@ -286,12 +274,8 @@ export default function Layout({ children }: { children: any }) {
         method: "PATCH",
       });
 
-      setNotifications((prev) =>
-        prev.map((n) => ({
-          ...n,
-          readAt: n.readAt || new Date().toISOString(),
-        })),
-      );
+      setNotifications([]);
+      setToast(null);
     } catch {}
   }
 
@@ -300,7 +284,7 @@ export default function Layout({ children }: { children: any }) {
       {/* =========================================================
           SIDEBAR
           ========================================================= */}
-      <aside className="flex h-screen flex-col overflow-hidden">
+      <aside className={`flex h-screen flex-col overflow-hidden ${mobileNavOpen ? "mobile-open" : ""}`}>
         {/* Brand stays fixed at the top */}
         <div className="brand shrink-0">
           Secure<span>File</span>
@@ -325,6 +309,7 @@ export default function Layout({ children }: { children: any }) {
               className={({ isActive }) =>
                 isActive ? "active" : ""
               }
+              onClick={() => setMobileNavOpen(false)}
             >
               <I size={17} />
               {label}
@@ -339,6 +324,7 @@ export default function Layout({ children }: { children: any }) {
         <button
           className="logout shrink-0"
           onClick={() => {
+            setMobileNavOpen(false);
             localStorage.clear();
             nav("/login");
           }}
@@ -351,8 +337,23 @@ export default function Layout({ children }: { children: any }) {
       {/* =========================================================
           MAIN CONTENT
           ========================================================= */}
+      {mobileNavOpen && (
+        <button
+          className="mobile-nav-backdrop"
+          aria-label="Close navigation"
+          onClick={() => setMobileNavOpen(false)}
+        />
+      )}
+
       <main className="min-w-0">
         <header>
+          <button
+            className="mobile-menu-button"
+            aria-label="Open navigation"
+            onClick={() => setMobileNavOpen(true)}
+          >
+            <Menu size={21} />
+          </button>
           <div className="search">
             <Search size={16} />
 
@@ -442,9 +443,7 @@ export default function Layout({ children }: { children: any }) {
                       {notifications.map((n) => (
                         <button
                           key={n.id}
-                          className={`notification-item ${
-                            n.readAt ? "read" : ""
-                          }`}
+                          className="notification-item"
                           onClick={() => {
                             if (!n.readAt) {
                               markRead(n.id);
@@ -469,7 +468,7 @@ export default function Layout({ children }: { children: any }) {
 
                       {!notifications.length && (
                         <div className="notification-empty">
-                          No notifications yet.
+                          No unread notifications.
                         </div>
                       )}
                     </div>

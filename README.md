@@ -129,7 +129,7 @@ Set `INBOUND_EMAIL_SECRET` in the production environment and configure your inbo
 
 ## Scanner workstation setup
 
-For physical scanner support, run `scanner-bridge/start-windows.bat` on the Windows PC connected to the WIA-compatible scanner, then set the frontend environment variable `VITE_SCANNER_BRIDGE_URL=http://127.0.0.1:8765`. SecureFile's Scan Documents module will connect to the local bridge, collect multiple pages, let the user reorder/remove them, and save the selected pages as one private PDF.
+For physical scanner support, run `scanner-bridge/start-windows.bat` on the Windows PC connected to the scanner, then set the frontend environment variable `VITE_SCANNER_BRIDGE_URL=http://127.0.0.1:8765`. The Universal Scanner Bridge supports WIA directly and WIA/TWAIN/eSCL through NAPS2, with device discovery, ADF/flatbed/duplex settings, multi-page collection, page reorder/remove, and private PDF saving. Install NAPS2 on Windows for the broadest scanner compatibility.
 
 ## Realtime notifications
 

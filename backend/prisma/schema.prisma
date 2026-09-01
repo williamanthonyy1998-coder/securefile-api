@@ -107,6 +107,8 @@ model User {
   createdTasks            Task[]              @relation("TaskCreator")
   company                 Company?            @relation(fields: [companyId], references: [id], onDelete: Cascade)
   tokens                  VerificationToken[]
+
+  @@index([companyId, status, createdAt])
 }
 
 model VerificationToken {
@@ -144,6 +146,7 @@ model Folder {
 
   @@index([companyId, parentId])
   @@index([companyId, ownerId, isPersonal])
+  @@index([companyId, deletedAt, createdAt])
 }
 
 model File {
@@ -171,6 +174,7 @@ model File {
 
   @@index([companyId, name])
   @@index([companyId, folderId])
+  @@index([companyId, deletedAt, createdAt])
 }
 
 model FileVersion {
@@ -210,6 +214,8 @@ model Share {
   @@index([companyId, recipientId])
   @@index([companyId, fileId])
   @@index([companyId, folderId])
+  @@index([companyId, recipientId, fileId, expiresAt])
+  @@index([companyId, recipientId, folderId, expiresAt])
 }
 
 model AccessRequest {
@@ -306,6 +312,7 @@ model GroupMember {
   user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
 
   @@unique([groupId, userId])
+  @@index([userId, groupId])
 }
 
 model Message {
@@ -322,6 +329,9 @@ model Message {
   sender      User     @relation("MessageSender", fields: [senderId], references: [id], onDelete: Cascade)
 
   @@index([companyId, createdAt])
+  @@index([companyId, senderId, createdAt])
+  @@index([companyId, recipientId, createdAt])
+  @@index([groupId, createdAt])
 }
 
 model FaxLine {

@@ -11,6 +11,8 @@ import { getFileAccess, getFolderAccess } from '../services/access';
 import { env } from '../config/env';
 import { putObject } from '../services/storage';
 import { safeFilename } from '../utils/security';
+import { emitNotificationRead, emitNotificationsReadAll } from '../services/realtime';
+import { answerAi } from '../services/ai';
 
 const r=Router();
 const taskUpload=multer({storage:multer.memoryStorage(),limits:{fileSize:env.MAX_UPLOAD_MB*1024*1024}});
@@ -130,7 +132,7 @@ r.post('/email',auth,activeSubscription,async(req:AuthedRequest,res,next)=>{try{
  if(recipient?.id)await notify(recipient.id,'New email',subject,req.user!.companyId!,'MESSAGE_RECEIVED',false,{entityId:created[0]?.id});res.status(201).json({ok:true,mail:created[0],recipient:{email:to},delivery});
 }catch(e){next(e)}});
 
-r.get('/notifications',auth,async(req:AuthedRequest,res)=>res.json(await db.notification.findMany({where:{userId:req.user!.id},orderBy:{createdAt:'desc'},take:100})));r.patch('/notifications/:id/read',auth,async(req:AuthedRequest,res)=>res.json(await db.notification.updateMany({where:{id:String(req.params.id),userId:req.user!.id},data:{readAt:new Date()}})));r.patch('/notifications/read-all',auth,async(req:AuthedRequest,res)=>res.json(await db.notification.updateMany({where:{userId:req.user!.id,readAt:null},data:{readAt:new Date()}})));
-r.post('/ai',auth,activeSubscription,async(req:AuthedRequest,res,next)=>{try{const message=String(req.body.message||'').trim();if(!message)return res.status(400).json({error:'Message required'});if(!env.AI_API_KEY||!env.AI_BASE_URL||!env.AI_MODEL)return res.json({answer:'AI is not configured yet.'});const response=await fetch(`${env.AI_BASE_URL.replace(/\/$/,'')}/chat/completions`,{method:'POST',headers:{Authorization:`Bearer ${env.AI_API_KEY}`,'Content-Type':'application/json'},body:JSON.stringify({model:env.AI_MODEL,messages:[{role:'system',content:'You are the SecureFile assistant. Help users use SecureFile. Never reveal data outside the current user’s authorization.'},{role:'user',content:message}],temperature:.2})});const data:any=await response.json();if(!response.ok)throw new Error(data?.error?.message||'AI provider error');res.json({answer:data.choices?.[0]?.message?.content||'No answer returned.'});}catch(e){next(e)}});
+r.get('/notifications',auth,async(req:AuthedRequest,res)=>res.json(await db.notification.findMany({where:{userId:req.user!.id,readAt:null},orderBy:{createdAt:'desc'},take:100})));r.patch('/notifications/:id/read',auth,async(req:AuthedRequest,res)=>{const id=String(req.params.id);const result=await db.notification.updateMany({where:{id,userId:req.user!.id,readAt:null},data:{readAt:new Date()}});if(result.count)emitNotificationRead(req.user!.id,id);res.json(result)});r.patch('/notifications/read-all',auth,async(req:AuthedRequest,res)=>{const result=await db.notification.updateMany({where:{userId:req.user!.id,readAt:null},data:{readAt:new Date()}});if(result.count)emitNotificationsReadAll(req.user!.id);res.json(result)});
+r.post('/ai',auth,activeSubscription,async(req:AuthedRequest,res,next)=>{try{const message=String(req.body.message||'').trim().slice(0,8000);if(!message)return res.status(400).json({error:'Message required'});const rawHistory=Array.isArray(req.body.history)?req.body.history:[];const history=rawHistory.filter((x:any)=>x&&['user','assistant'].includes(x.role)&&typeof x.content==='string').slice(-12).map((x:any)=>({role:x.role,content:String(x.content).slice(0,6000)}));const webEnabled=req.body.webSearchEnabled !== false;const result=await answerAi(req,message,history,webEnabled);res.json(result);}catch(e){next(e)}});
 
 export default r;
