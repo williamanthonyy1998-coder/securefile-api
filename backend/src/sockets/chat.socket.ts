@@ -28,6 +28,8 @@ class ChatSocket {
 
         this.registerSendMessage(io, socket);
 
+        this.registerRead(io, socket);
+
         this.registerTyping(io, socket);
     }
 
@@ -122,11 +124,37 @@ class ChatSocket {
 
                     const room = this.getConversationRoom(conversationId);
 
-                    /**
-                     * Broadcast to every socket in
-                     * this conversation.
-                     */
+                    // Broadcast to users currently viewing this conversation.
                     io.to(room).emit(SOCKET_EVENTS.CHAT.NEW_MESSAGE, message);
+
+                    // Also deliver to every participant's private room. This is
+                    // what makes a message delivered even when the recipient is
+                    // online but looking at another module/conversation.
+                    const conversation = await conversationService.getConversationById(
+                        conversationId,
+                        user.id,
+                        user.companyId,
+                    );
+                    const recipients = conversation.participants
+                        .map((p) => p.userId)
+                        .filter((id) => id !== user.id);
+                    for (const recipientId of recipients) {
+                        io.to(`user:${recipientId}`).emit(SOCKET_EVENTS.CHAT.NEW_MESSAGE, message);
+                    }
+
+                    // Double-grey check = delivered to at least one other
+                    // authenticated socket. Blue is set later by read receipt.
+                    const deliveredToOtherUser = recipients.some((recipientId) =>
+                        [...io.sockets.sockets.values()].some(
+                            (peer) => (peer.data.user as SocketUser | undefined)?.id === recipientId,
+                        ),
+                    );
+                    if (deliveredToOtherUser) {
+                        socket.emit(SOCKET_EVENTS.CHAT.MESSAGE_DELIVERED, {
+                            conversationId,
+                            messageId: message.id,
+                        });
+                    }
 
                     /**
                      * Acknowledge sender.
@@ -144,6 +172,46 @@ class ChatSocket {
         );
     }
 
+    private registerRead(io: Server, socket: Socket): void {
+        socket.on(
+            SOCKET_EVENTS.CHAT.MESSAGE_READ,
+            async (payload: TypingPayload, callback?: SocketCallback<SocketResponse>) => {
+                try {
+                    const user = this.getSocketUser(socket);
+                    const conversationId = this.validateConversationId(payload);
+                    const room = this.getConversationRoom(conversationId);
+                    if (!socket.rooms.has(room)) throw new Error("Conversation is not joined");
+
+                    const result = await conversationService.markConversationAsRead(
+                        conversationId,
+                        user.id,
+                        user.companyId,
+                    );
+
+                    const readPayload = {
+                        conversationId,
+                        userId: user.id,
+                        lastReadAt: result.lastReadAt,
+                    };
+                    io.to(room).emit(SOCKET_EVENTS.CHAT.MESSAGE_READ, readPayload);
+                    const conversation = await conversationService.getConversationById(
+                        conversationId,
+                        user.id,
+                        user.companyId,
+                    );
+                    // Notify every other participant so their sent messages
+                    // can switch from double-grey to double-blue immediately.
+                    const senderIds = [...new Set(conversation.participants.map((p) => p.userId).filter((id) => id !== user.id))];
+                    for (const senderId of senderIds) io.to(`user:${senderId}`).emit(SOCKET_EVENTS.CHAT.MESSAGE_READ, readPayload);
+
+                    callback?.({ ok: true, data: result });
+                } catch (error) {
+                    this.sendError(callback, error, "Unable to mark messages as read");
+                }
+            },
+        );
+    }
+
     private registerTyping(_io: Server, socket: Socket): void {
         socket.on(SOCKET_EVENTS.CHAT.TYPING, async (payload: TypingPayload) => {
             try {
@@ -155,13 +223,8 @@ class ChatSocket {
                  * Verify that the user actually belongs
                  * to this conversation.
                  */
-                const conversation = await conversationService.getConversationById(
-                    conversationId,
-                    user.id,
-                    user.companyId,
-                );
-
-                const room = this.getConversationRoom(conversation.id);
+                const room = this.getConversationRoom(conversationId);
+                if (!socket.rooms.has(room)) return;
 
                 /**
                  * Don't send typing event back to
@@ -188,13 +251,8 @@ class ChatSocket {
 
                     const conversationId = this.validateConversationId(payload);
 
-                    const conversation = await conversationService.getConversationById(
-                        conversationId,
-                        user.id,
-                        user.companyId,
-                    );
-
-                    const room = this.getConversationRoom(conversation.id);
+                    const room = this.getConversationRoom(conversationId);
+                    if (!socket.rooms.has(room)) return;
 
                     socket.to(room).emit(SOCKET_EVENTS.CHAT.STOP_TYPING, {
                         conversationId,
