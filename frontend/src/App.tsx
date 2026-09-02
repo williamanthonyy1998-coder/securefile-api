@@ -14,6 +14,7 @@ import Dashboard from "./pages/Dashboard";
 import Files from "./pages/Files";
 import Users from "./pages/Users";
 import Module from "./pages/Module";
+import Chat from "./pages/Chat";
 import SuperAdmin from "./pages/SuperAdmin";
 import VerifyEmail from "./pages/VerifyEmail";
 import ForgotPassword from "./pages/ForgotPassword";
@@ -148,6 +149,29 @@ export default function App() {
             <Users />
           </Private>
         }
+      />
+
+      <Route
+        path="/chat/:conversationId"
+        element={
+          <Private>
+            <Chat />
+          </Private>
+        }
+      />
+
+      <Route
+        path="/chat"
+        element={
+          <Private>
+            <Chat />
+          </Private>
+        }
+      />
+
+      <Route
+        path="/module/chat"
+        element={<Navigate to="/chat" replace />}
       />
 
       <Route

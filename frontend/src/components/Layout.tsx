@@ -24,6 +24,8 @@ import {
   Menu,
 } from "lucide-react";
 import { api, API, token } from "../lib/api";
+import { disconnectSocket } from "../services/socket";
+import { useChatStore } from "../stores/chat.store";
 
 const tenantItems: Array<[string, string, any, string?]> = [
   ["dashboard", "Dashboard", Bell],
@@ -34,7 +36,7 @@ const tenantItems: Array<[string, string, any, string?]> = [
   ["module/requests", "Requests", ClipboardCheck],
   ["module/approvals", "Approvals", ClipboardCheck],
   ["module/task-management", "Task Management", Briefcase],
-  ["module/chat", "Chat", MessageSquare],
+  ["chat", "Chat", MessageSquare],
   ["module/scan-documents", "Scan Documents", ScanLine, "scanner"],
   ["module/fax-documents", "Fax Documents", Printer, "fax"],
   ["module/ai", "AI Chat Bot", Bot],
@@ -81,6 +83,14 @@ export default function Layout({ children }: { children: any }) {
       : Notification.permission,
   );
 
+  function logout() {
+    disconnectSocket();
+    useChatStore.getState().clearChat();
+    setMobileNavOpen(false);
+    localStorage.clear();
+    nav("/login");
+  }
+
   const [toast, setToast] = useState<NotificationItem | null>(null);
 
   const [systemToast, setSystemToast] = useState<{
@@ -93,16 +103,19 @@ export default function Layout({ children }: { children: any }) {
     try {
       const saved = JSON.parse(localStorage.getItem("sf_addons") || "{}");
       if (saved && typeof saved === "object") setAddons(saved);
-    } catch {}
+    } catch { }
     // Existing sessions from older builds may not have login metadata yet.
     // Fetch it once, then cache it locally for the rest of the session.
     if (!localStorage.getItem("sf_addons")) {
-      api("/companies/me").then((c: any) => {
-        const a = (c.subscription?.addons || {}) as Record<string, boolean>;
-        setAddons(a);
-        localStorage.setItem("sf_addons", JSON.stringify(a));
-        if (c.subscription?.planCode) localStorage.setItem("sf_plan", c.subscription.planCode);
-      }).catch(() => {});
+      api("/companies/me")
+        .then((c: any) => {
+          const a = (c.subscription?.addons || {}) as Record<string, boolean>;
+          setAddons(a);
+          localStorage.setItem("sf_addons", JSON.stringify(a));
+          if (c.subscription?.planCode)
+            localStorage.setItem("sf_plan", c.subscription.planCode);
+        })
+        .catch(() => { });
     }
   }, [isSuper]);
 
@@ -125,7 +138,7 @@ export default function Layout({ children }: { children: any }) {
             ),
           5000,
         );
-      } catch {}
+      } catch { }
     };
 
     window.addEventListener("sf:alert", onAlert as EventListener);
@@ -133,8 +146,6 @@ export default function Layout({ children }: { children: any }) {
     return () =>
       window.removeEventListener("sf:alert", onAlert as EventListener);
   }, []);
-
-  
 
   useEffect(() => {
     const onChatEvent = () => setChatHighlight(true);
@@ -153,8 +164,13 @@ export default function Layout({ children }: { children: any }) {
     const pushNotification = (item: NotificationItem) => {
       if (item.readAt) return;
       notificationIds.current.add(item.id);
-      if (/message|email|chat/i.test(`${item.title} ${item.body}`)) setChatHighlight(true);
-      try { window.dispatchEvent(new CustomEvent('sf:notification', { detail: JSON.stringify(item) })); } catch {}
+      if (/message|email|chat/i.test(`${item.title} ${item.body}`))
+        setChatHighlight(true);
+      try {
+        window.dispatchEvent(
+          new CustomEvent("sf:notification", { detail: JSON.stringify(item) }),
+        );
+      } catch { }
 
       setNotifications((prev) =>
         [item, ...prev.filter((x) => x.id !== item.id)].slice(0, 100),
@@ -171,14 +187,11 @@ export default function Layout({ children }: { children: any }) {
             body: item.body,
             icon: "/favicon.svg",
           });
-        } catch {}
+        } catch { }
       }
 
       window.setTimeout(
-        () =>
-          setToast((current) =>
-            current?.id === item.id ? null : current,
-          ),
+        () => setToast((current) => (current?.id === item.id ? null : current)),
         6000,
       );
     };
@@ -195,20 +208,22 @@ export default function Layout({ children }: { children: any }) {
     const onNotification = (event: Event) => {
       try {
         pushNotification(
-          JSON.parse(
-            (event as MessageEvent).data,
-          ) as NotificationItem,
+          JSON.parse((event as MessageEvent).data) as NotificationItem,
         );
-      } catch {}
+      } catch { }
     };
 
     const onNotificationSync = (event: Event) => {
       try {
-        const items = JSON.parse((event as MessageEvent).data) as NotificationItem[];
-        const unread = Array.isArray(items) ? items.filter((item) => !item.readAt) : [];
+        const items = JSON.parse(
+          (event as MessageEvent).data,
+        ) as NotificationItem[];
+        const unread = Array.isArray(items)
+          ? items.filter((item) => !item.readAt)
+          : [];
         notificationIds.current = new Set(unread.map((item) => item.id));
         setNotifications(unread.slice().reverse().slice(0, 100));
-      } catch {}
+      } catch { }
     };
 
     source.addEventListener("notification", onNotification);
@@ -216,10 +231,13 @@ export default function Layout({ children }: { children: any }) {
 
     const onNotificationRead = (event: Event) => {
       try {
-        const id = String((JSON.parse((event as MessageEvent).data) as { id?: string })?.id || '');
+        const id = String(
+          (JSON.parse((event as MessageEvent).data) as { id?: string })?.id ||
+          "",
+        );
         if (!id) return;
         setNotifications((prev) => prev.filter((n) => n.id !== id));
-      } catch {}
+      } catch { }
     };
 
     const onNotificationsReadAll = () => {
@@ -230,17 +248,17 @@ export default function Layout({ children }: { children: any }) {
     source.addEventListener("notification-read", onNotificationRead);
     source.addEventListener("notifications-read-all", onNotificationsReadAll);
 
-
-
     return () => {
       source.removeEventListener("notification", onNotification);
       source.removeEventListener("notification-sync", onNotificationSync);
       source.removeEventListener("notification-read", onNotificationRead);
-      source.removeEventListener("notifications-read-all", onNotificationsReadAll);
+      source.removeEventListener(
+        "notifications-read-all",
+        onNotificationsReadAll,
+      );
       source.close();
     };
   }, [isSuper]);
-
 
   const unreadCount = useMemo(
     () => notifications.filter((n) => !n.readAt).length,
@@ -250,12 +268,12 @@ export default function Layout({ children }: { children: any }) {
   const items = isSuper
     ? superItems
     : tenantItems.filter(([to, , , _feature]) => {
-        if (role === "CLIENT" && to === "users") return false;
+      if (role === "CLIENT" && to === "users") return false;
 
-        if (role === "EMPLOYEE" && to === "users") return false;
+      if (role === "EMPLOYEE" && to === "users") return false;
 
-        return !_feature || !!addons[_feature];
-      });
+      return !_feature || !!addons[_feature];
+    });
 
   async function enableBrowserAlerts() {
     if (typeof Notification === "undefined") {
@@ -278,7 +296,7 @@ export default function Layout({ children }: { children: any }) {
       });
 
       setNotifications((prev) => prev.filter((n) => n.id !== id));
-    } catch {}
+    } catch { }
   }
 
   async function markAllRead() {
@@ -289,7 +307,7 @@ export default function Layout({ children }: { children: any }) {
 
       setNotifications([]);
       setToast(null);
-    } catch {}
+    } catch { }
   }
 
   return (
@@ -297,7 +315,9 @@ export default function Layout({ children }: { children: any }) {
       {/* =========================================================
           SIDEBAR
           ========================================================= */}
-      <aside className={`flex h-screen flex-col overflow-hidden ${mobileNavOpen ? "mobile-open" : ""}`}>
+      <aside
+        className={`flex h-screen flex-col overflow-hidden ${mobileNavOpen ? "mobile-open" : ""}`}
+      >
         {/* Brand stays fixed at the top */}
         <div className="brand shrink-0">
           Secure<span>File</span>
@@ -320,9 +340,12 @@ export default function Layout({ children }: { children: any }) {
               key={to}
               to={"/" + to}
               className={({ isActive }) =>
-                `${isActive ? "active" : ""} ${to === "module/chat" && chatHighlight && !isActive ? "chat-nav-highlight" : ""}`.trim()
+                `${isActive ? "active" : ""} ${to === "chat" && chatHighlight && !isActive ? "chat-nav-highlight" : ""}`.trim()
               }
-              onClick={() => { setMobileNavOpen(false); if (to === "module/chat") setChatHighlight(false); }}
+              onClick={() => {
+                setMobileNavOpen(false);
+                if (to === "chat") setChatHighlight(false);
+              }}
             >
               <I size={17} />
               {label}
@@ -336,11 +359,7 @@ export default function Layout({ children }: { children: any }) {
             ======================================================= */}
         <button
           className="logout shrink-0"
-          onClick={() => {
-            setMobileNavOpen(false);
-            localStorage.clear();
-            nav("/login");
-          }}
+          onClick={logout}
         >
           <LogOut size={17} />
           Logout
@@ -375,16 +394,8 @@ export default function Layout({ children }: { children: any }) {
               value={q}
               onChange={(e) => setQ(e.target.value)}
               onKeyDown={(e) => {
-                if (
-                  e.key === "Enter" &&
-                  q.trim() &&
-                  !isSuper
-                ) {
-                  nav(
-                    `/files?q=${encodeURIComponent(
-                      q.trim(),
-                    )}`,
-                  );
+                if (e.key === "Enter" && q.trim() && !isSuper) {
+                  nav(`/files?q=${encodeURIComponent(q.trim())}`);
                 }
               }}
             />
@@ -396,9 +407,7 @@ export default function Layout({ children }: { children: any }) {
                 <button
                   className="notification-button"
                   aria-label="Notifications"
-                  onClick={() =>
-                    setNotificationOpen((v) => !v)
-                  }
+                  onClick={() => setNotificationOpen((v) => !v)}
                 >
                   <Bell size={19} />
 
@@ -433,19 +442,14 @@ export default function Layout({ children }: { children: any }) {
                         )}
 
                         {unreadCount > 0 && (
-                          <button
-                            title="Mark all read"
-                            onClick={markAllRead}
-                          >
+                          <button title="Mark all read" onClick={markAllRead}>
                             <CheckCheck size={15} />
                           </button>
                         )}
 
                         <button
                           title="Close"
-                          onClick={() =>
-                            setNotificationOpen(false)
-                          }
+                          onClick={() => setNotificationOpen(false)}
                         >
                           <X size={15} />
                         </button>
@@ -471,9 +475,7 @@ export default function Layout({ children }: { children: any }) {
                             <small>{n.body}</small>
 
                             <time>
-                              {new Date(
-                                n.createdAt,
-                              ).toLocaleString()}
+                              {new Date(n.createdAt).toLocaleString()}
                             </time>
                           </span>
                         </button>
@@ -502,28 +504,21 @@ export default function Layout({ children }: { children: any }) {
                     textAlign: "right",
                   }}
                 >
-                  {PLAN_NAMES[
-                    localStorage.getItem("sf_plan") || ""
-                  ] || ""}
+                  {PLAN_NAMES[localStorage.getItem("sf_plan") || ""] || ""}
                 </small>
               )}
             </div>
           </div>
         </header>
 
-        <section className="content">
-          {children}
-        </section>
+        <section className="content">{children}</section>
       </main>
 
       {/* =========================================================
           SYSTEM TOAST
           ========================================================= */}
       {systemToast && (
-        <div
-          className={`system-toast ${systemToast.type}`}
-          role="status"
-        >
+        <div className={`system-toast ${systemToast.type}`} role="status">
           <span className="system-toast-icon">
             {systemToast.type === "success" ? (
               <CheckCircle2 size={18} />
@@ -536,10 +531,7 @@ export default function Layout({ children }: { children: any }) {
 
           <span>{systemToast.message}</span>
 
-          <button
-            aria-label="Dismiss"
-            onClick={() => setSystemToast(null)}
-          >
+          <button aria-label="Dismiss" onClick={() => setSystemToast(null)}>
             <X size={16} />
           </button>
         </div>
