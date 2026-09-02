@@ -73,6 +73,7 @@ export default function Layout({ children }: { children: any }) {
   const notificationIds = useRef<Set<string>>(new Set());
 
   const [notificationOpen, setNotificationOpen] = useState(false);
+  const [chatHighlight, setChatHighlight] = useState(false);
 
   const [browserPermission, setBrowserPermission] = useState<string>(
     typeof Notification === "undefined"
@@ -136,11 +137,23 @@ export default function Layout({ children }: { children: any }) {
   
 
   useEffect(() => {
+    const onChatEvent = () => setChatHighlight(true);
+    const onChatOpen = () => setChatHighlight(false);
+    window.addEventListener("sf:chat-event", onChatEvent);
+    window.addEventListener("sf:chat-open", onChatOpen);
+    return () => {
+      window.removeEventListener("sf:chat-event", onChatEvent);
+      window.removeEventListener("sf:chat-open", onChatOpen);
+    };
+  }, []);
+
+  useEffect(() => {
     if (isSuper || !token()) return;
 
     const pushNotification = (item: NotificationItem) => {
       if (item.readAt) return;
       notificationIds.current.add(item.id);
+      if (/message|email|chat/i.test(`${item.title} ${item.body}`)) setChatHighlight(true);
       try { window.dispatchEvent(new CustomEvent('sf:notification', { detail: JSON.stringify(item) })); } catch {}
 
       setNotifications((prev) =>
@@ -307,9 +320,9 @@ export default function Layout({ children }: { children: any }) {
               key={to}
               to={"/" + to}
               className={({ isActive }) =>
-                isActive ? "active" : ""
+                `${isActive ? "active" : ""} ${to === "module/chat" && chatHighlight && !isActive ? "chat-nav-highlight" : ""}`.trim()
               }
-              onClick={() => setMobileNavOpen(false)}
+              onClick={() => { setMobileNavOpen(false); if (to === "module/chat") setChatHighlight(false); }}
             >
               <I size={17} />
               {label}
