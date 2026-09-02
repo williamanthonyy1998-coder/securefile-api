@@ -290,62 +290,171 @@ function ScannerModule({setErr}:any){
 function AI({setErr}:any){const [q,setQ]=useState(''),[messages,setMessages]=useState<any[]>([]),[busy,setBusy]=useState(false),[webSearch,setWebSearch]=useState(true);async function ask(){const text=q.trim();if(!text||busy)return;const history=messages.map(x=>({role:x.role,content:x.content}));setMessages(m=>[...m,{role:'user',content:text}]);setQ('');setBusy(true);try{const d=await api('/workspace/ai',{method:'POST',body:JSON.stringify({message:text,history,webSearchEnabled:webSearch})});setMessages(m=>[...m,{role:'assistant',content:d.answer,sources:d.sources||[],webSearched:Boolean(d.webSearched)}]);}catch(e:any){setErr(e.message);setMessages(m=>[...m,{role:'assistant',content:'I could not complete that request. Please try again.'}]);}finally{setBusy(false)}}return <div className="ai-shell"><div className="panel ai-panel"><div className="ai-head"><div><h2 style={{marginBottom:4}}>SecureFile AI</h2><p className="muted">Your private SecureFile assistant. It only uses resources available to your current login.</p></div><label className="ai-web-toggle"><input type="checkbox" checked={webSearch} onChange={e=>setWebSearch(e.target.checked)}/><span>Web search when needed</span></label></div><div className="ai-safety">🔒 Your SecureFile data stays scoped to your account. Other users' private files and workspace data are not included.</div><div className="ai-messages">{!messages.length&&<div className="ai-empty"><Send size={24}/><h3>Ask SecureFile AI</h3><p>Try: “What files do I have?”, “What tasks are due?”, “How do I send a fax?” or ask a general question.</p></div>}{messages.map((m,i)=><div key={i} className={`ai-message ${m.role==='user'?'user':'assistant'}`}><div className="ai-bubble">{m.content}</div>{m.webSearched&&m.sources?.length>0&&<div className="ai-sources"><span>Web sources</span>{m.sources.map((x:any,j:number)=><a key={j} href={x.url} target="_blank" rel="noreferrer">{x.url}</a>)}</div>}</div>)}{busy&&<div className="ai-message assistant"><div className="ai-bubble ai-typing">Thinking…</div></div>}</div><div className="ai-composer"><textarea value={q} onChange={e=>setQ(e.target.value)} onKeyDown={e=>{if(e.key==='Enter'&&!e.shiftKey){e.preventDefault();ask()}}} placeholder="Ask about your SecureFile workspace or anything else…" rows={2}/><button className="btn" disabled={!q.trim()||busy} onClick={ask}><Send size={15}/>{busy?'Thinking…':'Ask'}</button></div></div></div>}
 function Chat({users: initialUsers}:any){
   const [users,setUsers]=useState<any[]>(initialUsers||[]);
-  const me=localStorage.getItem('sf_user_id');
+  const me=localStorage.getItem('sf_user_id')||'';
   const [mode,setMode]=useState<'chat'|'group'|'mail'>('chat');
-  const [to,setTo]=useState(''),[groupId,setGroupId]=useState(''),[body,setBody]=useState('');
-  const [messages,setMessages]=useState<any[]>([]),[groups,setGroups]=useState<any[]>([]);
+  const [to,setTo]=useState(''),[groupId,setGroupId]=useState(''),[conversationId,setConversationId]=useState(''),[body,setBody]=useState('');
+  const [messages,setMessages]=useState<any[]>([]),[groups,setGroups]=useState<any[]>([]),[conversations,setConversations]=useState<any[]>([]);
   const [groupName,setGroupName]=useState(''),[groupUsers,setGroupUsers]=useState<string[]>([]);
   const [emails,setEmails]=useState<any[]>([]),[mailBox,setMailBox]=useState<'inbox'|'sent'>('inbox');
   const [subject,setSubject]=useState(''),[mailBody,setMailBody]=useState(''),[mailRecipient,setMailRecipient]=useState('');
   const [recipientMode,setRecipientMode]=useState<'USER'|'EMAIL'>('USER');
   const [mailDetail,setMailDetail]=useState<any>(null);
+  const [online,setOnline]=useState<Set<string>>(new Set());
+  const [typingUsers,setTypingUsers]=useState<Set<string>>(new Set());
+  const [delivered,setDelivered]=useState<Set<string>>(new Set());
+  const [readAtByUser,setReadAtByUser]=useState<Record<string,string>>({});
+  const socketRef=useRef<any>(null);
+  const conversationIdRef=useRef('');
+  const typingTimer=useRef<number|undefined>(undefined);
   const people=users.filter((u:any)=>u.id!==me&&u.status==='ACTIVE');
 
-  async function loadGroups(){try{setGroups(await api('/workspace/groups'))}catch{}}
-  async function loadMessages(){try{
-    if(mode==='chat'&&to)setMessages(await api('/workspace/messages?withUser='+encodeURIComponent(to)));
-    else if(mode==='group'&&groupId)setMessages(await api('/workspace/messages?groupId='+encodeURIComponent(groupId)));
-  }catch{}}
-  async function loadEmails(){try{setEmails(await api('/workspace/emails?box='+mailBox))}catch{}}
-  useEffect(()=>{Promise.all([initialUsers?.length?Promise.resolve(initialUsers):api('/users'),api('/workspace/groups')]).then(([u,g])=>{setUsers(u||[]);setGroups(g||[])}).catch(()=>{})},[]);
-  useEffect(()=>{loadMessages()},[mode,to,groupId]);
-  useEffect(()=>{if(mode==='mail')loadEmails()},[mode,mailBox]);
+  const socketUrl=(()=>{
+    const configured=String((import.meta as any).env?.VITE_SOCKET_URL||'').trim();
+    if(configured)return configured.replace(/\/$/,'');
+    const apiBase=String((import.meta as any).env?.VITE_API_URL||'').trim();
+    if(apiBase)return apiBase.replace(/\/api\/?$/,'');
+    return (window.location.protocol==='https:'?'https://':'http://')+window.location.hostname+':4000';
+  })();
 
+  async function loadGroups(){try{setGroups(await api('/workspace/groups'))}catch{}}
+  async function loadConversations(){try{const r=await api('/conversations?limit=100');setConversations(r?.conversations||[])}catch{}}
+  async function loadMessages(id=conversationId){try{
+    if(!id){setMessages([]);return;}
+    const rows=await api('/workspace/messages?'+(mode==='chat'?'withUser='+encodeURIComponent(to):'groupId='+encodeURIComponent(id)));
+    setMessages(rows||[]);
+    const c=await api('/conversations/'+encodeURIComponent(id));
+    const reads:any={};
+    for(const p of (c?.participants||[]))if(p.lastReadAt)reads[p.userId]=p.lastReadAt;
+    setReadAtByUser(reads);
+    setDelivered(new Set());
+    const sock=socketRef.current;
+    if(sock?.connected)sock.emit('chat:message_read',{conversationId:id});
+  }catch{setMessages([])}}
+  async function ensureDirect(userId:string){
+    const existing=conversations.find((c:any)=>c.type==='DIRECT'&&c.participants?.some((p:any)=>p.userId===me)&&c.participants?.some((p:any)=>p.userId===userId));
+    if(existing)return existing.id;
+    try{const r=await api('/conversations/direct',{method:'POST',body:JSON.stringify({userId})});const c=r?.conversation;if(c){setConversations(v=>[...v.filter((x:any)=>x.id!==c.id),c]);return c.id}}catch{}
+    return '';
+  }
+
+  // One Socket.IO connection handles chat delivery, typing, read receipts and presence.
+  useEffect(()=>{
+    let cancelled=false;
+    const start=()=>{
+      if(cancelled)return;
+      const factory=(window as any).io;
+      const authToken=localStorage.getItem('sf_token')||'';
+      if(!factory||!authToken)return;
+      const socket=factory(socketUrl,{auth:{token:authToken},transports:['websocket','polling'],withCredentials:true,reconnection:true,reconnectionAttempts:Infinity,reconnectionDelay:500,reconnectionDelayMax:5000});
+      socketRef.current=socket;
+      socket.on('chat:presence_snapshot',(p:any)=>setOnline(new Set(Array.isArray(p?.userIds)?p.userIds:[])));
+      socket.on('chat:presence',(p:any)=>setOnline(prev=>{const n=new Set(prev);if(p?.online)n.add(p.userId);else n.delete(p.userId);return n}));
+      socket.on('chat:typing',(p:any)=>{if(!p?.userId)return;setTypingUsers(prev=>new Set(prev).add(p.userId));});
+      socket.on('chat:stop_typing',(p:any)=>{if(!p?.userId)return;setTypingUsers(prev=>{const n=new Set(prev);n.delete(p.userId);return n});});
+      socket.on('chat:message_delivered',(p:any)=>{if(p?.messageId)setDelivered(prev=>new Set(prev).add(p.messageId));});
+      socket.on('chat:message_read',(p:any)=>{
+        if(!p?.conversationId||!p?.userId||!p?.lastReadAt)return;
+        setReadAtByUser(prev=>({...prev,[p.userId]:p.lastReadAt}));
+      });
+      socket.on('chat:new_message',(m:any)=>{
+        if(!m?.id||!m?.conversationId)return;
+        const active=conversationId===m.conversationId;
+        if(active){
+          setMessages(prev=>prev.some(x=>x.id===m.id)?prev:[...prev,m]);
+          if(m.senderId!==me)socket.emit('chat:message_read',{conversationId:m.conversationId});
+        }
+        try{window.dispatchEvent(new CustomEvent('sf:chat-event',{detail:JSON.stringify({message:m,active})}));}catch{}
+        if(m.senderId===me)setDelivered(prev=>new Set(prev).add(m.id));
+      });
+      socket.on('connect',()=>{
+        // Rejoin the currently open conversation after reconnect.
+        if(conversationIdRef.current)socket.emit('chat:join_conversation',{conversationId:conversationIdRef.current});
+      });
+      socket.on('connect_error',(e:any)=>console.warn('[SecureFile chat]',e?.message||'connection error'));
+    };
+    if((window as any).io)start();
+    else{
+      const timer=window.setInterval(()=>{if((window as any).io){window.clearInterval(timer);start();}},100);
+      window.setTimeout(()=>window.clearInterval(timer),10000);
+    }
+    return()=>{cancelled=true;const sock=socketRef.current;if(sock){sock.removeAllListeners();sock.disconnect();socketRef.current=null}if(typingTimer.current)window.clearTimeout(typingTimer.current)};
+  },[socketUrl]);
+
+  useEffect(()=>{Promise.all([initialUsers?.length?Promise.resolve(initialUsers):api('/users'),loadGroups(),loadConversations()]).then(([u])=>setUsers(u||[])).catch(()=>{})},[]);
+
+  useEffect(()=>{
+    let cancelled=false;
+    (async()=>{
+      let id='';
+      if(mode==='chat'&&to)id=await ensureDirect(to);
+      else if(mode==='group'&&groupId)id=groupId;
+      if(cancelled)return;
+      setConversationId(id);
+      conversationIdRef.current=id;
+      const sock=socketRef.current;
+      if(sock?.connected){
+        for(const room of [conversationId,id])if(room&&room!==id)sock.emit('chat:leave_conversation',{conversationId:room});
+        if(id)sock.emit('chat:join_conversation',{conversationId:id});
+      }
+      await loadMessages(id);
+    })();
+    return()=>{cancelled=true};
+  },[mode,to,groupId,conversations.length]);
+
+  useEffect(()=>{if(mode==='mail')loadEmails()},[mode,mailBox]);
+  async function loadEmails(){try{setEmails(await api('/workspace/emails?box='+mailBox))}catch{}}
+
+  function handleTyping(value:string){
+    setBody(value);
+    const sock=socketRef.current;
+    if(!sock?.connected||!conversationId)return;
+    sock.emit('chat:typing',{conversationId});
+    if(typingTimer.current)window.clearTimeout(typingTimer.current);
+    typingTimer.current=window.setTimeout(()=>sock.emit('chat:stop_typing',{conversationId}),900);
+  }
   async function send(){
-    if(!body.trim())return;
-    try{await api('/workspace/messages',{method:'POST',body:JSON.stringify({recipientId:mode==='chat'?to:undefined,groupId:mode==='group'?groupId:undefined,body:body.trim()})});setBody('');loadMessages();}
-    catch(e:any){alert(e.message)}
+    const text=body.trim();if(!text||!conversationId)return;
+    const sock=socketRef.current;
+    try{
+      if(sock?.connected){
+        await new Promise((resolve,reject)=>sock.timeout(8000).emit('chat:send_message',{conversationId,body:text},(ack:any)=>ack?.ok?resolve(ack):reject(new Error(ack?.error||'Unable to send message'))));
+      }else{
+        await api('/workspace/messages',{method:'POST',body:JSON.stringify({recipientId:mode==='chat'?to:undefined,groupId:mode==='group'?groupId:undefined,body:text})});
+        await loadMessages(conversationId);
+      }
+      setBody('');
+      if(sock?.connected)sock.emit('chat:stop_typing',{conversationId});
+    }catch(e:any){alert(e.message)}
   }
   async function createGroup(){
     if(!groupName.trim()||!groupUsers.length)return;
-    try{const g=await api('/workspace/groups',{method:'POST',body:JSON.stringify({name:groupName,userIds:groupUsers})});setGroupName('');setGroupUsers([]);await loadGroups();setGroupId(g.id);setMode('group');}
+    try{const g=await api('/workspace/groups',{method:'POST',body:JSON.stringify({name:groupName,userIds:groupUsers})});setGroupName('');setGroupUsers([]);await Promise.all([loadGroups(),loadConversations()]);setGroupId(g.id);setMode('group');}
     catch(e:any){alert(e.message)}
   }
-  async function renameGroup(g:any){
-    const name=window.prompt('New group name',g.name); if(!name?.trim())return;
-    try{await api('/workspace/groups/'+g.id,{method:'PATCH',body:JSON.stringify({name:name.trim()})});loadGroups();}
-    catch(e:any){alert(e.message)}
-  }
-  async function deleteGroup(g:any){
-    if(!confirm(`Delete group "${g.name}"? Messages will be removed.`))return;
-    try{await api('/workspace/groups/'+g.id,{method:'DELETE'});if(groupId===g.id)setGroupId('');loadGroups();}
-    catch(e:any){alert(e.message)}
-  }
+  async function renameGroup(g:any){const name=window.prompt('New group name',g.name);if(!name?.trim())return;try{await api('/workspace/groups/'+g.id,{method:'PATCH',body:JSON.stringify({name:name.trim()})});loadGroups()}catch(e:any){alert(e.message)}}
+  async function deleteGroup(g:any){if(!confirm(`Delete group "${g.name}"? Messages will be removed.`))return;try{await api('/workspace/groups/'+g.id,{method:'DELETE'});if(groupId===g.id)setGroupId('');await Promise.all([loadGroups(),loadConversations()])}catch(e:any){alert(e.message)}}
   async function sendMail(){
-    const emailMode=recipientMode==='EMAIL';
-    const valid=emailMode?/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(mailRecipient.trim()):!!mailRecipient;
-    if(!valid||!subject.trim()||!mailBody.trim())return;
-    try{
-      await api('/workspace/email',{method:'POST',body:JSON.stringify({recipientId:emailMode?undefined:mailRecipient,recipientEmail:emailMode?mailRecipient.trim().toLowerCase():undefined,subject:subject.trim(),body:mailBody.trim()})});
-      setSubject('');setMailBody('');setMailRecipient('');setMailBox('sent');setMailDetail(null);await loadEmails();
-    }catch(e:any){alert(e.message)}
+    const emailMode=recipientMode==='EMAIL';const valid=emailMode?/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(mailRecipient.trim()):!!mailRecipient;if(!valid||!subject.trim()||!mailBody.trim())return;
+    try{await api('/workspace/email',{method:'POST',body:JSON.stringify({recipientId:emailMode?undefined:mailRecipient,recipientEmail:emailMode?mailRecipient.trim().toLowerCase():undefined,subject:subject.trim(),body:mailBody.trim()})});setSubject('');setMailBody('');setMailRecipient('');setMailBox('sent');setMailDetail(null);await loadEmails()}catch(e:any){alert(e.message)}
+  }
+  const currentUser=people.find((u:any)=>u.id===to);
+  const currentGroup=groups.find((g:any)=>g.id===groupId);
+  const currentTyping=[...typingUsers].filter(id=>id!==me).map(id=>users.find((u:any)=>u.id===id)?.uniqueName).filter(Boolean);
+  const otherParticipantIds=mode==='chat'&&to?[to]:((currentGroup?.members||[]).map((m:any)=>m.userId).filter((id:string)=>id!==me));
+  function messageStatus(m:any){
+    if(m.senderId!==me)return null;
+    const readTimes=otherParticipantIds.map((id:string)=>readAtByUser[id]).filter(Boolean) as string[];
+    const isRead=readTimes.length>0 && otherParticipantIds.every((id:string)=>readAtByUser[id] && new Date(m.createdAt).getTime()<=new Date(readAtByUser[id]).getTime());
+    if(isRead)return <span className="message-checks read" title="Seen">✓✓</span>;
+    if(delivered.has(m.id))return <span className="message-checks delivered" title="Delivered">✓✓</span>;
+    return <span className="message-checks sent" title="Sent">✓</span>;
   }
   return <div className="chat-shell">
     <div className="chat-sidebar">
       <div className="chat-tabs"><button className={mode==='chat'?'active':''} onClick={()=>setMode('chat')}>Chats</button><button className={mode==='group'?'active':''} onClick={()=>setMode('group')}>Groups</button><button className={mode==='mail'?'active':''} onClick={()=>setMode('mail')}>Mail</button></div>
-      {mode==='chat'&&<>{people.map((u:any)=><button key={u.id} className={`chat-person ${to===u.id?'selected':''}`} onClick={()=>setTo(u.id)}><b>{u.uniqueName}</b><small>{u.email}</small></button>)}{!people.length&&<p className="muted">No active company users.</p>}</>}
+      {mode==='chat'&&<>{people.map((u:any)=><button key={u.id} className={`chat-person ${to===u.id?'selected':''}`} onClick={()=>{setTo(u.id);try{window.dispatchEvent(new CustomEvent('sf:chat-open'))}catch{}}}><span className={`presence-dot ${online.has(u.id)?'online':'offline'}`}/><span className="chat-person-copy"><b>{u.uniqueName}</b><small>{online.has(u.id)?'Online':'Offline'} · {u.email}</small></span></button>)}{!people.length&&<p className="muted">No active company users.</p>}</>}
       {mode==='group'&&<>
-        {groups.map((g:any)=><div key={g.id} className={`chat-person ${groupId===g.id?'selected':''}`}><button className="link-button" style={{display:'block',width:'100%',textAlign:'left'}} onClick={()=>setGroupId(g.id)}><b>{g.name}</b><small>{g.members?.length||0} members</small></button><div className="row-actions"><button className="icon-btn" title="Rename" onClick={()=>renameGroup(g)}>✎</button><button className="icon-btn danger" title="Delete" onClick={()=>deleteGroup(g)}>×</button></div></div>)}
+        {groups.map((g:any)=><div key={g.id} className={`chat-person group-item ${groupId===g.id?'selected':''}`}><button className="link-button" style={{display:'block',width:'100%',textAlign:'left'}} onClick={()=>{setGroupId(g.id);try{window.dispatchEvent(new CustomEvent('sf:chat-open'))}catch{}}}><b>{g.name}</b><small>{g.members?.length||0} members</small></button><div className="row-actions"><button className="icon-btn" title="Rename" onClick={()=>renameGroup(g)}>✎</button><button className="icon-btn danger" title="Delete" onClick={()=>deleteGroup(g)}>×</button></div></div>)}
         <div className="group-create"><input placeholder="Group name" value={groupName} onChange={e=>setGroupName(e.target.value)}/>{people.map((u:any)=><label className="checkline" key={u.id}><input type="checkbox" checked={groupUsers.includes(u.id)} onChange={e=>setGroupUsers(v=>e.target.checked?[...v,u.id]:v.filter(x=>x!==u.id))}/>{u.uniqueName}</label>)}<button className="btn small" disabled={!groupName.trim()||!groupUsers.length} onClick={createGroup}>Create group</button></div>
       </>}
       {mode==='mail'&&<>
@@ -356,15 +465,13 @@ function Chat({users: initialUsers}:any){
     </div>
     <div className="chat-main">
       {mode==='mail'?<div className="grid2 mail-layout">
-        <div className="panel"><div className="toolbar"><h2 style={{margin:0}}>SecureFile Mail</h2><span className="muted">{mailBox==='inbox'?'Inbox':'Sent'}</span></div>
-          <div className="mail-compose-tabs"><button className={`btn small ${recipientMode==='USER'?'':'secondary'}`} onClick={()=>setRecipientMode('USER')}>Company user</button><button className={`btn small ${recipientMode==='EMAIL'?'':'secondary'}`} onClick={()=>setRecipientMode('EMAIL')}>Email address</button></div>
-          {recipientMode==='USER'?<label>Recipient<select value={mailRecipient} onChange={e=>setMailRecipient(e.target.value)}><option value="">Choose company user</option>{people.map((u:any)=><option key={u.id} value={u.id}>{u.uniqueName} — {u.email}</option>)}</select></label>:<label>Recipient email<input type="email" value={mailRecipient} onChange={e=>setMailRecipient(e.target.value)} placeholder="name@example.com"/></label>}
-          <label>Subject<input value={subject} onChange={e=>setSubject(e.target.value)} placeholder="Subject"/></label><label>Message<textarea rows={10} value={mailBody} onChange={e=>setMailBody(e.target.value)} placeholder="Write your email..."/></label>
-          <button className="btn" disabled={!mailRecipient||!subject.trim()||!mailBody.trim()|| (recipientMode==='EMAIL'&&!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(mailRecipient))} onClick={sendMail}><Send size={14}/> Send email</button>
-          <p className="muted" style={{marginTop:10}}>Incoming mail can be routed into this mailbox through the SecureFile inbound-email webhook.</p>
-        </div>
+        <div className="panel"><div className="toolbar"><h2 style={{margin:0}}>SecureFile Mail</h2><span className="muted">{mailBox==='inbox'?'Inbox':'Sent'}</span></div><div className="mail-compose-tabs"><button className={`btn small ${recipientMode==='USER'?'':'secondary'}`} onClick={()=>setRecipientMode('USER')}>Company user</button><button className={`btn small ${recipientMode==='EMAIL'?'':'secondary'}`} onClick={()=>setRecipientMode('EMAIL')}>Email address</button></div>{recipientMode==='USER'?<label>Recipient<select value={mailRecipient} onChange={e=>setMailRecipient(e.target.value)}><option value="">Choose company user</option>{people.map((u:any)=><option key={u.id} value={u.id}>{u.uniqueName} — {u.email}</option>)}</select></label>:<label>Recipient email<input type="email" value={mailRecipient} onChange={e=>setMailRecipient(e.target.value)} placeholder="name@example.com"/></label>}<label>Subject<input value={subject} onChange={e=>setSubject(e.target.value)} placeholder="Subject"/></label><label>Message<textarea rows={10} value={mailBody} onChange={e=>setMailBody(e.target.value)} placeholder="Write your email..."/></label><button className="btn" disabled={!mailRecipient||!subject.trim()||!mailBody.trim()||(recipientMode==='EMAIL'&&!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(mailRecipient))} onClick={sendMail}><Send size={14}/> Send email</button><p className="muted" style={{marginTop:10}}>Incoming mail can be routed into this mailbox through the SecureFile inbound-email webhook.</p></div>
         <div className="panel"><h2>{mailDetail?.subject||'Select an email'}</h2>{mailDetail?<><p className="muted"><b>From:</b> {mailDetail.sender?.email||'External sender'}<br/><b>To:</b> {mailDetail.recipientEmail}<br/><b>Date:</b> {new Date(mailDetail.createdAt).toLocaleString()}</p><div className="data mail-body">{mailDetail.body}</div></>:<p className="muted">Select an email from the mailbox.</p>}</div>
-      </div>:<div className="panel chat-conversation"><h2>{mode==='chat'?(people.find((u:any)=>u.id===to)?.uniqueName||'Select a person'):(groups.find((g:any)=>g.id===groupId)?.name||'Select a group')}</h2><div className="data chat-messages">{messages.map((m:any)=><div className={`message-bubble ${m.senderId===me?'mine':''}`} key={m.id}><b>{m.sender?.uniqueName||'You'}</b><p>{m.body}</p><small>{new Date(m.createdAt).toLocaleString()}</small></div>)}{!messages.length&&<span className="muted">Select a chat or group to start messaging.</span>}</div><div className="toolbar"><input value={body} onChange={e=>setBody(e.target.value)} placeholder="Write a message..." onKeyDown={e=>{if(e.key==='Enter'&&!e.shiftKey){e.preventDefault();send()}}}/><button className="btn" disabled={!(to||groupId)||!body.trim()} onClick={send}><Send size={14}/> Send</button></div></div>}
+      </div>:<div className="panel chat-conversation">
+        <div className="chat-conversation-head"><div><h2>{mode==='chat'?(currentUser?.uniqueName||'Select a person'):(currentGroup?.name||'Select a group')}</h2>{mode==='chat'&&currentUser&&<span className={`chat-status ${online.has(currentUser.id)?'online':'offline'}`}><span className={`presence-dot ${online.has(currentUser.id)?'online':'offline'}`}/>{online.has(currentUser.id)?'Online':'Offline'}</span>}{currentTyping.length>0&&<span className="typing-indicator">{currentTyping.length===1?`${currentTyping[0]} is typing...`:`${currentTyping.join(', ')} are typing...`}</span>}</div><span className="muted">{mode==='group'?`${currentGroup?.members?.length||0} members`:''}</span></div>
+        <div className="data chat-messages">{messages.map((m:any)=><div className={`message-bubble ${m.senderId===me?'mine':''}`} key={m.id}><b>{m.sender?.uniqueName||'You'}</b><p>{m.body}</p><small>{new Date(m.createdAt).toLocaleString()} {messageStatus(m)}</small></div>)}{!messages.length&&<span className="muted">Select a chat or group to start messaging.</span>}</div>
+        <div className="toolbar"><input value={body} onChange={e=>handleTyping(e.target.value)} placeholder={conversationId?'Write a message...':'Select a chat first'} disabled={!conversationId} onKeyDown={e=>{if(e.key==='Enter'&&!e.shiftKey){e.preventDefault();send()}}}/><button className="btn" disabled={!conversationId||!body.trim()} onClick={send}><Send size={14}/> Send</button></div>
+      </div>}
     </div>
   </div>
 }

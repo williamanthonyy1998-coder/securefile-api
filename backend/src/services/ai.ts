@@ -55,7 +55,7 @@ async function buildUserContext(req: AuthedRequest): Promise<UserContext> {
     db.approval.findMany({ where: { companyId, approverId: userId }, select: { id: true, status: true, canDownload: true, createdAt: true, accessRequest: { select: { requestedName: true } } }, orderBy: { createdAt: 'desc' }, take: 100 }),
     db.faxLine.findUnique({ where: { userId }, select: { phoneNumber: true, active: true } }),
     db.faxJob.findMany({ where: { companyId, userId }, select: { direction: true, status: true, recipientNumber: true, senderNumber: true, pages: true, createdAt: true, file: { select: { name: true } } }, orderBy: { createdAt: 'desc' }, take: 100 }),
-    db.group.findMany({ where: { companyId, members: { some: { userId } } }, select: { name: true }, orderBy: { name: 'asc' }, take: 100 }),
+    db.conversation.findMany({ where: { companyId, type: 'GROUP', participants: { some: { userId } } }, select: { name: true }, orderBy: { name: 'asc' }, take: 100 }),
     db.notification.count({ where: { userId, readAt: null } }),
   ]);
 
@@ -81,7 +81,7 @@ async function buildUserContext(req: AuthedRequest): Promise<UserContext> {
     requests: requests.map(x => ({ requestedName: x.requestedName, requestedType: x.requestedType, status: x.status, canDownload: x.canDownload, createdAt: x.createdAt.toISOString() })),
     approvals: approvals.map(x => ({ requestedName: x.accessRequest?.requestedName || null, status: x.status, canDownload: x.canDownload, createdAt: x.createdAt.toISOString() })),
     fax: { number: faxLine?.active ? faxLine.phoneNumber : null, jobs: faxJobs.map(x => ({ direction: x.direction, status: x.status, recipient: x.recipientNumber, sender: x.senderNumber, file: x.file?.name || null, pages: x.pages, createdAt: x.createdAt.toISOString() })) },
-    groups: groups.map(g => g.name), unreadNotifications,
+    groups: groups.map(g => g.name || ''), unreadNotifications,
   };
 }
 
