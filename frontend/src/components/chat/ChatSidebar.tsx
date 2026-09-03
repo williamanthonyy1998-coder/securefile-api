@@ -1,22 +1,28 @@
+import type { Conversation } from "../../api/chat.api";
+import { conversationTitle, displayName } from "./chat.utils";
+
 type ChatMode = "chat" | "group" | "mail";
 
 type ChatSidebarProps = {
   mode: ChatMode;
   onModeChange: (mode: ChatMode) => void;
   people: any[];
-  selectedUserId: string;
+  directConversations: Conversation[];
+  groupConversations: Conversation[];
+  selectedConversationId: string;
+  unreadByConversation: Record<string, number>;
+  me: string;
   online: Set<string>;
-  onSelectUser: (userId: string) => void;
-  groups: any[];
-  selectedGroupId: string;
-  onSelectGroup: (groupId: string) => void;
-  onRenameGroup: (group: any) => void;
-  onDeleteGroup: (group: any) => void;
+  onSelectConversation: (conversation: Conversation) => void;
+  onStartDirect: (userId: string) => void;
+  onRenameGroup: (conversation: Conversation) => void;
+  onLeaveGroup: (conversation: Conversation) => void;
   groupName: string;
   onGroupNameChange: (value: string) => void;
   groupUsers: string[];
   onToggleGroupUser: (userId: string, checked: boolean) => void;
   onCreateGroup: () => void;
+  creatingGroup: boolean;
   mailBox: "inbox" | "sent";
   onMailBoxChange: (box: "inbox" | "sent") => void;
   emails: any[];
@@ -28,25 +34,37 @@ export default function ChatSidebar({
   mode,
   onModeChange,
   people,
-  selectedUserId,
+  directConversations,
+  groupConversations,
+  selectedConversationId,
+  unreadByConversation,
+  me,
   online,
-  onSelectUser,
-  groups,
-  selectedGroupId,
-  onSelectGroup,
+  onSelectConversation,
+  onStartDirect,
   onRenameGroup,
-  onDeleteGroup,
+  onLeaveGroup,
   groupName,
   onGroupNameChange,
   groupUsers,
   onToggleGroupUser,
   onCreateGroup,
+  creatingGroup,
   mailBox,
   onMailBoxChange,
   emails,
   mailDetail,
   onSelectMail,
 }: ChatSidebarProps) {
+  const chattedUserIds = new Set(
+    directConversations.flatMap((conversation) =>
+      conversation.participants
+        .map((p) => p.userId)
+        .filter((id) => id !== me),
+    ),
+  );
+  const newPeople = people.filter((u: any) => !chattedUserIds.has(u.id));
+
   return (
     <div className="chat-sidebar">
       <div className="chat-tabs">
@@ -71,61 +89,96 @@ export default function ChatSidebar({
       </div>
       {mode === "chat" && (
         <>
-          {people.map((u: any) => (
+          {directConversations.map((conversation) => {
+            const other = conversation.participants.find((p) => p.userId !== me)
+              ?.user;
+            const unread = unreadByConversation[conversation.id] || 0;
+            return (
+              <button
+                key={conversation.id}
+                className={`chat-person ${selectedConversationId === conversation.id ? "selected" : ""}`}
+                onClick={() => onSelectConversation(conversation)}
+              >
+                <span
+                  className={`presence-dot ${other && online.has(other.id) ? "online" : "offline"}`}
+                />
+                <span className="chat-person-copy">
+                  <b>{conversationTitle(conversation, me)}</b>
+                  <small>
+                    {conversation.lastMessage?.body ||
+                      (other && online.has(other.id) ? "Online" : "Offline")}
+                  </small>
+                </span>
+                {unread > 0 && (
+                  <span className="notification-badge">{unread > 99 ? "99+" : unread}</span>
+                )}
+              </button>
+            );
+          })}
+          {newPeople.map((u: any) => (
             <button
               key={u.id}
-              className={`chat-person ${selectedUserId === u.id ? "selected" : ""}`}
-              onClick={() => onSelectUser(u.id)}
+              className="chat-person"
+              onClick={() => onStartDirect(u.id)}
             >
               <span
                 className={`presence-dot ${online.has(u.id) ? "online" : "offline"}`}
               />
               <span className="chat-person-copy">
-                <b>{u.uniqueName}</b>
-                <small>
-                  {online.has(u.id) ? "Online" : "Offline"} · {u.email}
-                </small>
+                <b>{displayName(u)}</b>
+                <small>Start a chat · {u.email}</small>
               </span>
             </button>
           ))}
-          {!people.length && (
+          {!directConversations.length && !newPeople.length && (
             <p className="muted">No active company users.</p>
           )}
         </>
       )}
       {mode === "group" && (
         <>
-          {groups.map((g: any) => (
-            <div
-              key={g.id}
-              className={`chat-person group-item ${selectedGroupId === g.id ? "selected" : ""}`}
-            >
-              <button
-                className="link-button"
-                style={{ display: "block", width: "100%", textAlign: "left" }}
-                onClick={() => onSelectGroup(g.id)}
+          {groupConversations.map((conversation) => {
+            const unread = unreadByConversation[conversation.id] || 0;
+            return (
+              <div
+                key={conversation.id}
+                className={`chat-person group-item ${selectedConversationId === conversation.id ? "selected" : ""}`}
               >
-                <b>{g.name}</b>
-                <small>{g.members?.length || 0} members</small>
-              </button>
-              <div className="row-actions">
                 <button
-                  className="icon-btn"
-                  title="Rename"
-                  onClick={() => onRenameGroup(g)}
+                  className="link-button"
+                  style={{ display: "block", width: "100%", textAlign: "left" }}
+                  onClick={() => onSelectConversation(conversation)}
                 >
-                  ✎
+                  <b>{conversation.name || "Group"}</b>
+                  <small>
+                    {conversation.participants.length} members
+                    {conversation.lastMessage?.body
+                      ? ` · ${conversation.lastMessage.body}`
+                      : ""}
+                  </small>
                 </button>
-                <button
-                  className="icon-btn danger"
-                  title="Delete"
-                  onClick={() => onDeleteGroup(g)}
-                >
-                  ×
-                </button>
+                {unread > 0 && (
+                  <span className="notification-badge">{unread > 99 ? "99+" : unread}</span>
+                )}
+                <div className="row-actions">
+                  <button
+                    className="icon-btn"
+                    title="Rename"
+                    onClick={() => onRenameGroup(conversation)}
+                  >
+                    ✎
+                  </button>
+                  <button
+                    className="icon-btn danger"
+                    title="Leave"
+                    onClick={() => onLeaveGroup(conversation)}
+                  >
+                    ×
+                  </button>
+                </div>
               </div>
-            </div>
-          ))}
+            );
+          })}
           <div className="group-create">
             <input
               placeholder="Group name"
@@ -139,15 +192,15 @@ export default function ChatSidebar({
                   checked={groupUsers.includes(u.id)}
                   onChange={(e) => onToggleGroupUser(u.id, e.target.checked)}
                 />
-                {u.uniqueName}
+                {displayName(u)}
               </label>
             ))}
             <button
               className="btn small"
-              disabled={!groupName.trim() || !groupUsers.length}
+              disabled={!groupName.trim() || !groupUsers.length || creatingGroup}
               onClick={onCreateGroup}
             >
-              Create group
+              {creatingGroup ? "Creating…" : "Create group"}
             </button>
           </div>
         </>

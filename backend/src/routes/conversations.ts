@@ -24,6 +24,10 @@ router.post("/group", auth, createGroupConversation);
 
 router.get("/", auth, getConversations);
 
+router.get("/unread", auth, getUnreadCounts);
+
+router.get("/unread/:id", auth, getUnreadCount);
+
 router.get("/:id", auth, getConversation);
 
 router.patch("/:id", auth, updateConversation);
@@ -35,9 +39,5 @@ router.delete("/:id/participants/:userId", auth, removeParticipant);
 router.patch("/:id/read", auth, markAsRead);
 
 router.delete("/:id/leave", auth, leaveConversation);
-
-router.get("/unread", auth, getUnreadCounts);
-
-router.get("/unread/:id", auth, getUnreadCount);
 
 export default router;

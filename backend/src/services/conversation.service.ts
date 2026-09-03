@@ -351,8 +351,13 @@ class ConversationService {
       throw new Error("Your account must be active");
     }
 
-    if (currentUser.role !== Role.COMPANY_ADMIN) {
-      throw new Error("Only COMPANY_ADMIN can create group conversations");
+    if (
+      currentUser.role !== Role.COMPANY_ADMIN &&
+      currentUser.role !== Role.EMPLOYEE
+    ) {
+      throw new Error(
+        "Only Company Admin and Employees can create group conversations",
+      );
     }
 
     const participantIds = [currentUserId, ...input.participantIds]

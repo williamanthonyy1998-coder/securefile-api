@@ -1,4 +1,4 @@
-import type { Prisma } from '@prisma/client';
+import type { Prisma, Role } from '@prisma/client';
 import { Router } from 'express';
 import { db } from '../db';
 import { auth, AuthedRequest, role } from '../middleware/auth';
@@ -29,6 +29,89 @@ r.get('/', auth, async (req: AuthedRequest, res, next) => {
     });
     res.json(users);
   } catch (e) { next(e); }
+});
+
+r.get("/chat", auth, async (req: AuthedRequest, res, next) => {
+  try {
+    const currentUser = req.user;
+
+    if (!currentUser?.companyId) {
+      return res.status(400).json({ error: "No company" });
+    }
+
+    const currentUserRecord = await db.user.findUnique({
+      where: {
+        id: currentUser.id,
+      },
+      select: {
+        id: true,
+        companyId: true,
+        role: true,
+      },
+    });
+
+    if (!currentUserRecord) {
+      return res.status(404).json({ error: "User not found" });
+    }
+
+    let allowedRoles: string[];
+
+    switch (currentUserRecord.role) {
+      case "EMPLOYEE":
+        allowedRoles = ["EMPLOYEE", "COMPANY_ADMIN"];
+        break;
+
+      case "CLIENT":
+        allowedRoles = ["COMPANY_ADMIN"];
+        break;
+
+      case "COMPANY_ADMIN":
+        allowedRoles = ["EMPLOYEE", "CLIENT", "COMPANY_ADMIN"];
+        break;
+
+      default:
+        allowedRoles = [];
+        break;
+    }
+
+    const users = await db.user.findMany({
+      where: {
+        companyId: currentUserRecord.companyId,
+        id: {
+          not: currentUserRecord.id,
+        },
+        role: {
+          in: allowedRoles as Role[],
+        },
+        status: "ACTIVE",
+      },
+
+      select: {
+        id: true,
+        email: true,
+        uniqueName: true,
+        role: true,
+        status: true,
+        emailVerifiedAt: true,
+        personalFolderAllowed: true,
+        createdAt: true,
+        _count: {
+          select: {
+            ownedFiles: true,
+            ownedFolders: true,
+          },
+        },
+      },
+
+      orderBy: {
+        createdAt: "desc",
+      },
+    });
+
+    return res.json(users);
+  } catch (e) {
+    next(e);
+  }
 });
 
 r.get('/meta', auth, role('COMPANY_ADMIN'), async (req: AuthedRequest, res, next) => {
