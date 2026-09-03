@@ -24,8 +24,10 @@ import {
   Menu,
 } from "lucide-react";
 import { api, API, token } from "../lib/api";
-import { disconnectSocket } from "../services/socket";
+import { connectSocket, disconnectSocket } from "../services/socket";
 import { useChatStore } from "../stores/chat.store";
+import { queryClient } from "../providers/QueryClientProvider";
+import { chatKeys } from "../api/chat.api";
 
 const tenantItems: Array<[string, string, any, string?]> = [
   ["dashboard", "Dashboard", Bell],
@@ -86,6 +88,7 @@ export default function Layout({ children }: { children: any }) {
   function logout() {
     disconnectSocket();
     useChatStore.getState().clearChat();
+    queryClient.removeQueries({ queryKey: chatKeys.all });
     setMobileNavOpen(false);
     localStorage.clear();
     nav("/login");
@@ -117,6 +120,11 @@ export default function Layout({ children }: { children: any }) {
         })
         .catch(() => { });
     }
+  }, [isSuper]);
+
+  useEffect(() => {
+    const accessToken = token();
+    if (!isSuper && accessToken) connectSocket(accessToken);
   }, [isSuper]);
 
   useEffect(() => {

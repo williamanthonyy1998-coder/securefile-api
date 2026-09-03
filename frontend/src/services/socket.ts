@@ -5,7 +5,9 @@ const API_URL = import.meta.env.VITE_SOCKET_URL || "http://localhost:4000";
 let socket: Socket | null = null;
 
 export function connectSocket(accessToken: string) {
-    if (socket?.connected) {
+    if (socket) {
+        socket.auth = { token: accessToken };
+        if (!socket.connected) socket.connect();
         return socket;
     }
 
@@ -14,6 +16,10 @@ export function connectSocket(accessToken: string) {
             token: accessToken,
         },
         transports: ["websocket", "polling"],
+        reconnection: true,
+        reconnectionAttempts: Infinity,
+        reconnectionDelay: 500,
+        reconnectionDelayMax: 5000,
     });
 
     socket.on("connect", () => {

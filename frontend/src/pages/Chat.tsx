@@ -1,9 +1,10 @@
-import { useState } from "react";
 import { RefreshCw } from "lucide-react";
+import { useQueryClient } from "@tanstack/react-query";
 import ChatWorkspace from "../components/chat/ChatWorkspace";
+import { chatKeys } from "../api/chat.api";
 
 export default function Chat() {
-  const [refresh, setRefresh] = useState(0);
+  const queryClient = useQueryClient();
 
   return (
     <>
@@ -15,12 +16,15 @@ export default function Chat() {
         </div>
         <button
           className="btn secondary"
-          onClick={() => setRefresh((x) => x + 1)}
+          onClick={() => {
+            queryClient.invalidateQueries({ queryKey: chatKeys.all });
+            queryClient.invalidateQueries({ queryKey: ["users"] });
+          }}
         >
           <RefreshCw size={15} /> Refresh
         </button>
       </div>
-      <ChatWorkspace key={refresh} />
+      <ChatWorkspace />
     </>
   );
 }
