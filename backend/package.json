@@ -5,6 +5,7 @@
     "dev": "npm run db:generate && npm run dev:watch",
     "build": "npm run db:generate && tsc",
     "start": "node dist/server.js",
+    "typecheck": "tsc --noEmit",
     "db:generate": "prisma generate --schema prisma/schema.prisma",
     "db:sync": "tsx scripts/safe-db-sync.ts",
     "db:backfill-personal": "tsx scripts/backfill-personal-folders.ts",

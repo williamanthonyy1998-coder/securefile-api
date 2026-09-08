@@ -1,12 +1,19 @@
-import {Router} from 'express'; import {db} from '../db'; import {auth,AuthedRequest} from '../middleware/auth'; import {getFolderAccess,listVisibleFolderIds} from '../services/access'; import {safeFilename} from '../utils/security'; import {activeSubscription} from '../middleware/subscription';
-import {notify, notifyCompanyAdmins} from '../services/notify';
-const r=Router();
+import { Router } from "express";
 
-r.get('/',auth,async(req:AuthedRequest,res)=>{const cid=req.user?.companyId;if(!cid)return res.status(400).json({error:'No company'});const ids=await listVisibleFolderIds(req.user!.id,req.user!.role,cid);const where={companyId:cid,deletedAt:null,id:{in:ids}};res.setHeader("Cache-Control", "private, no-store");res.json(await db.folder.findMany({where,select:{id:true,companyId:true,ownerId:true,parentId:true,name:true,isPersonal:true,createdAt:true,updatedAt:true},orderBy:[{isPersonal:'desc'},{name:'asc'}]}));});
+import { auth } from "../middleware/auth";
+import { activeSubscription } from "../middleware/subscription";
+import {
+  createFolder,
+  deleteFolder,
+  listFolders,
+  updateFolder,
+} from "../controllers/folder.controller";
 
-r.post('/',auth,activeSubscription,async(req:AuthedRequest,res)=>{if(!req.user?.companyId)return res.status(400).json({error:'No company'});const name=safeFilename(String(req.body.name||'New Folder'));const parentId=req.body.parentId||undefined;if(parentId&&!await getFolderAccess(req.user.id,req.user.role,req.user.companyId,parentId,'upload'))return res.status(403).json({error:'Folder permission denied'});const created=await db.folder.create({data:{companyId:req.user.companyId,ownerId:req.user.id,parentId,name,isPersonal:false}});await notifyCompanyAdmins(req.user.companyId,'Folder created',`${name} was created by ${req.user.email||'a user'}.`,'SYSTEM',{excludeUserId:req.user.id,entityId:created.id});res.status(201).json(created);});
+const router = Router();
 
-r.patch('/:id',auth,activeSubscription,async(req:AuthedRequest,res,next)=>{try{const f=await getFolderAccess(req.user!.id,req.user!.role,req.user!.companyId!,String(req.params.id),'edit');if(!f)return res.status(403).json({error:'Edit permission denied'});if(f.isPersonal)return res.status(403).json({error:'Personal folders cannot be renamed or moved'});const parentId=req.body.parentId===null?null:req.body.parentId||f.parentId;if(parentId===f.id)return res.status(400).json({error:'Folder cannot contain itself'});if(parentId){const parent=await db.folder.findFirst({where:{id:parentId,companyId:f.companyId,deletedAt:null}});if(!parent)return res.status(404).json({error:'Destination folder not found'});let cursor:any=parent;while(cursor){if(cursor.id===f.id)return res.status(400).json({error:'A folder cannot be moved inside itself or one of its descendants'});cursor=cursor.parentId?await db.folder.findFirst({where:{id:cursor.parentId,companyId:f.companyId,deletedAt:null},select:{id:true,parentId:true}}):null;}if(!await getFolderAccess(req.user!.id,req.user!.role,req.user!.companyId!,parentId,'upload'))return res.status(403).json({error:'Destination folder permission denied'});}const updated=await db.folder.update({where:{id:f.id},data:{name:req.body.name?safeFilename(String(req.body.name)):f.name,parentId}});await notifyCompanyAdmins(f.companyId,'Folder updated',`${f.name} was renamed or moved by ${req.user!.email||'a user'}.`,'SYSTEM',{excludeUserId:req.user!.id,entityId:f.id});res.json(updated);}catch(e){next(e)}});
+router.get("/", auth, listFolders);
+router.post("/", auth, activeSubscription, createFolder);
+router.patch("/:id", auth, activeSubscription, updateFolder);
+router.delete("/:id", auth, activeSubscription, deleteFolder);
 
-r.delete('/:id',auth,activeSubscription,async(req:AuthedRequest,res,next)=>{try{const f=await getFolderAccess(req.user!.id,req.user!.role,req.user!.companyId!,String(req.params.id),'delete');if(!f)return res.status(403).json({error:'Delete permission denied'});if(f.isPersonal)return res.status(403).json({error:'Personal folders cannot be deleted'});const now=new Date();const descendants=await db.folder.findMany({where:{companyId:f.companyId,deletedAt:null},select:{id:true,parentId:true}});const ids=new Set<string>([f.id]);let changed=true;while(changed){changed=false;for(const d of descendants){if(d.parentId&&ids.has(d.parentId)&&!ids.has(d.id)){ids.add(d.id);changed=true}}}await db.$transaction([db.folder.updateMany({where:{id:{in:[...ids]}},data:{deletedAt:now}}),db.file.updateMany({where:{companyId:f.companyId,folderId:{in:[...ids]},deletedAt:null},data:{deletedAt:now}})]);await notifyCompanyAdmins(f.companyId,'Folder moved to trash',`${f.name} and its contents were moved to Trash by ${req.user!.email||'a user'}.`,'FILE_DELETED',{excludeUserId:req.user!.id,entityId:f.id});res.status(204).end();}catch(e){next(e)}});
-export default r;
+export default router;

@@ -2,9 +2,6 @@ import crypto from 'node:crypto';
 import { env } from '../config/env';
 import { db } from '../db';
 
-console.log(process.env.EMAIL_FROM, "Email from");
-console.log(process.env.RESEND_API_KEY, "API Key");
-
 function esc(value: string) {
   return value.replace(/[&<>'"]/g, c => ({ '&':'&amp;', '<':'&lt;', '>':'&gt;', "'":'&#39;', '"':'&quot;' }[c]!));
 }
