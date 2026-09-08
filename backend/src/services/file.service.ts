@@ -5,6 +5,7 @@ import { env } from "../config/env";
 import { db } from "../db";
 import { AppError } from "../utils/errors";
 import { safeFilename } from "../utils/security";
+import { assertAllowedUploadType } from "../utils/uploadAllowlist";
 import { jpegImagesToPdf } from "../utils/jpegPdf";
 import {
   getFileAccess,
@@ -96,6 +97,7 @@ class FileService {
     const mimeType = String(
       input.mimeType || "application/octet-stream",
     ).slice(0, 160);
+    assertAllowedUploadType(mimeType, name);
     const folderId = input.folderId ? String(input.folderId) : undefined;
 
     if (!Number.isFinite(size) || size <= 0) {
@@ -160,6 +162,7 @@ class FileService {
     const mimeType = String(
       input.mimeType || "application/octet-stream",
     ).slice(0, 160);
+    assertAllowedUploadType(mimeType, name);
     const size = Number(input.sizeBytes || 0);
     const folderId = input.folderId ? String(input.folderId) : undefined;
 
@@ -319,6 +322,8 @@ class FileService {
     if (!file) {
       throw new AppError("File and tenant required", 400);
     }
+
+    assertAllowedUploadType(file.mimetype, file.originalname);
 
     const folderId = input.folderId || undefined;
     if (
