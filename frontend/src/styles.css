@@ -2018,6 +2018,14 @@ td {
   flex-wrap: wrap;
   gap: 5px 10px;
 }
+.shared-resource-name {
+  display: flex;
+  align-items: flex-start;
+  gap: 10px;
+}
+.shared-resource-name .table-sub {
+  display: block;
+}
 .share-perms .checkline {
   font-size: 12px;
 }
