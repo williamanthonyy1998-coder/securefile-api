@@ -180,7 +180,7 @@ class SharingService {
         OR: [{ ownerId: userId }, { recipientId: userId }],
       },
       include: {
-        file: { select: { id: true, name: true } },
+        file: { select: { id: true, name: true, mimeType: true } },
         folder: { select: { id: true, name: true } },
         recipient: { select: { id: true, email: true, uniqueName: true } },
         owner: { select: { id: true, email: true, uniqueName: true } },
