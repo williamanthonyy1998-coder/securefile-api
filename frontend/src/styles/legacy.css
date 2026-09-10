@@ -1,0 +1,409 @@
+/* Shared legacy component classes — Tailwind @apply + theme tokens.
+   Intentionally omits old app-shell (.app > aside, fixed sidebar, main margin)
+   so Layout/Dashboard Tailwind shell is not overridden. */
+
+@layer components {
+  .page-head {
+    @apply mb-7 flex items-end justify-between gap-4;
+  }
+
+  .page-head h1 {
+    @apply my-1 text-[30px] font-extrabold tracking-tight text-foreground;
+  }
+
+  .page-head p {
+    @apply m-0 text-sm text-muted-foreground;
+  }
+
+  .eyebrow {
+    @apply text-[11px] font-bold uppercase tracking-[0.14em] !text-primary;
+  }
+
+  .muted {
+    @apply text-muted-foreground;
+  }
+
+  .error {
+    @apply rounded-lg border border-[#f0cfc9] bg-[#fff5f5] p-2.5 text-destructive;
+  }
+
+  .success {
+    @apply rounded-lg border border-[#b7e4c7] bg-[#ecfdf3] p-2.5 text-[#177245];
+  }
+
+  .notice {
+    @apply rounded-lg border border-border bg-muted p-2.5 text-sm text-muted-foreground;
+  }
+
+  .cards {
+    @apply mb-[18px] grid grid-cols-4 gap-3.5;
+  }
+
+  .stat,
+  .panel {
+    @apply rounded-[14px] border border-border bg-card shadow-sm;
+    padding: 18px 20px;
+  }
+
+  .stat-top {
+    @apply flex items-center justify-between gap-2.5;
+  }
+
+  .stat-icon {
+    @apply grid size-[30px] shrink-0 place-items-center rounded-[9px] bg-muted text-foreground;
+  }
+
+  .stat span {
+    @apply block text-[13px] font-medium text-muted-foreground;
+  }
+
+  .stat strong {
+    @apply mt-3 block text-[28px] tracking-tight text-foreground;
+  }
+
+  .panel {
+    @apply mb-[18px];
+  }
+
+  .panel h2 {
+    @apply m-0 text-base font-bold tracking-tight;
+  }
+
+  .bar {
+    @apply h-2 overflow-hidden rounded-full border border-border bg-muted;
+  }
+
+  .bar i {
+    @apply block h-full rounded-full bg-primary;
+  }
+
+  .btn {
+    @apply inline-flex cursor-pointer items-center justify-center gap-[7px] rounded-[10px] border-0 bg-primary px-[15px] py-2.5 text-[13.5px] font-bold text-primary-foreground duration-150;
+    transition-property: background-color, transform, box-shadow;
+  }
+
+  .btn:hover {
+    @apply bg-[#e57400];
+  }
+
+  .btn:active {
+    @apply translate-y-px;
+  }
+
+  .btn:disabled {
+    @apply translate-y-0 cursor-not-allowed opacity-[0.55];
+  }
+
+  .btn.small {
+    @apply px-2.5 py-[7px] text-xs;
+  }
+
+  .btn.secondary {
+    @apply border border-border bg-muted text-foreground;
+  }
+
+  .btn.secondary:hover {
+    @apply bg-[#ebebeb];
+  }
+
+  .toolbar {
+    @apply flex flex-wrap items-center gap-2;
+  }
+
+  .toolbar input,
+  .toolbar select {
+    @apply min-w-[140px];
+  }
+
+  .form-card input,
+  .form-card select,
+  .form-inline input,
+  .form-inline select,
+  .toolbar input,
+  .price-card input,
+  .price-card select {
+    @apply my-[7px] mb-3 w-full rounded-[10px] border border-[#ddd] bg-card p-3 text-foreground;
+    font: inherit;
+  }
+
+  .form-card input:focus,
+  .form-card select:focus,
+  .form-inline input:focus,
+  .form-inline select:focus,
+  .toolbar input:focus,
+  .price-card input:focus,
+  .price-card select:focus {
+    @apply border-[rgba(247,127,0,0.55)] outline-none shadow-[0_0_0_3px_rgba(247,127,0,0.12)];
+  }
+
+  .link-button {
+    @apply cursor-pointer border-0 bg-transparent p-0 text-left text-foreground;
+    font: inherit;
+  }
+
+  .row-actions {
+    @apply flex items-center justify-center gap-1.5;
+  }
+
+  .actions-col {
+    @apply w-[72px] text-center;
+  }
+
+  table {
+    @apply w-full border-collapse;
+  }
+
+  th,
+  td {
+    @apply border-b border-border px-3 py-3.5 text-left text-sm;
+  }
+
+  th {
+    @apply bg-muted text-xs font-bold uppercase tracking-[0.06em] text-muted-foreground;
+  }
+
+  tbody tr {
+    @apply transition-colors duration-100;
+  }
+
+  tbody tr:hover {
+    @apply bg-muted/70;
+  }
+
+  .modal-backdrop {
+    @apply fixed inset-0 z-20 grid place-items-center bg-[rgba(27,27,27,0.4)] p-5;
+  }
+
+  .modal {
+    @apply max-h-[90vh] w-[min(560px,96vw)] overflow-auto rounded-2xl bg-card p-6 shadow-[0_25px_80px_rgba(0,0,0,0.2)];
+  }
+
+  .modal-head {
+    @apply mb-[18px] flex items-start justify-between;
+  }
+
+  .modal-head h2 {
+    @apply my-0.5;
+  }
+
+  .modal-actions {
+    @apply mt-2 flex justify-end gap-2 border-t border-border pt-4;
+  }
+
+  .modal-section {
+    @apply my-2 mb-3.5 border-t border-border pt-[18px] text-xs font-extrabold uppercase tracking-[0.08em] text-primary;
+  }
+
+  .close-btn {
+    @apply size-8 cursor-pointer rounded-lg border-0 bg-muted text-2xl;
+  }
+
+  .modal label {
+    @apply mb-3 flex flex-col gap-1.5 text-[13px] font-bold;
+  }
+
+  .modal label input {
+    @apply rounded-lg border border-[#d9e0e9] p-[11px] font-normal;
+    font: inherit;
+  }
+
+  .form-card {
+    @apply flex w-[min(460px,92vw)] flex-col gap-2 rounded-2xl border border-border bg-card p-8 shadow-sm;
+  }
+
+  .form-card h1 {
+    @apply mb-1 mt-0 tracking-tight;
+  }
+
+  .form-card textarea {
+    @apply w-full resize-y rounded-lg border border-[#d8e0eb] bg-card p-[11px];
+    font: inherit;
+  }
+
+  .form-card label {
+    @apply flex flex-col gap-1.5;
+  }
+
+  .form-card label + label {
+    @apply mt-2.5;
+  }
+
+  .auth {
+    @apply grid min-h-svh place-items-center bg-background;
+  }
+
+  .form-inline {
+    @apply flex flex-col;
+  }
+
+  .grid2 {
+    @apply grid grid-cols-2 gap-[18px];
+  }
+
+  .icon-btn {
+    @apply grid size-8 place-items-center rounded-lg border border-[#dce3ed] bg-card text-[#38506d];
+  }
+
+  .icon-btn.danger {
+    @apply text-destructive;
+  }
+
+  .empty-state,
+  .empty-company {
+    @apply px-5 py-[70px] text-center text-muted-foreground;
+  }
+
+  .empty-state h3,
+  .empty-company h3 {
+    @apply my-3 text-foreground;
+  }
+
+  .empty-state p,
+  .empty-company p {
+    @apply mb-[18px] mt-0;
+  }
+
+  .table-sub {
+    @apply mt-0.5 block text-[11px] text-muted-foreground;
+  }
+
+  .files-layout {
+    @apply grid grid-cols-[minmax(220px,280px)_minmax(0,1fr)] items-start gap-4;
+  }
+
+  .files-main-panel {
+    @apply min-w-0;
+  }
+
+  .file-actions-menu {
+    @apply relative inline-flex;
+  }
+
+  .file-actions-trigger.active {
+    @apply bg-muted;
+  }
+
+  .file-actions-dropdown {
+    @apply absolute top-[calc(100%+6px)] right-0 z-30 min-w-[190px] rounded-xl border border-border bg-card p-1.5 shadow-[0_14px_40px_rgba(27,27,27,0.12)];
+  }
+
+  .file-actions-dropdown.align-left {
+    @apply right-auto left-0;
+  }
+
+  .file-actions-item {
+    @apply flex w-full cursor-pointer items-center gap-2.5 rounded-lg border-0 bg-transparent px-2.5 py-[9px] text-left text-[13px] text-foreground;
+    font: inherit;
+  }
+
+  .file-actions-item:hover {
+    @apply bg-muted;
+  }
+
+  .file-actions-item.danger {
+    @apply text-destructive;
+  }
+
+  .file-actions-item.danger:hover {
+    @apply bg-[#fef3f2];
+  }
+
+  .data {
+    @apply min-h-40 overflow-auto whitespace-pre-wrap rounded-[10px] bg-muted p-4;
+  }
+
+  .user-row {
+    @apply flex items-center justify-between border-b border-border py-[13px];
+  }
+
+  .user-row small {
+    @apply block text-muted-foreground;
+  }
+
+  .sa-actions {
+    @apply flex gap-2.5;
+  }
+
+  .preview {
+    @apply min-h-[300px];
+  }
+
+  .preview iframe {
+    @apply bg-card;
+  }
+
+  .checkline {
+    @apply !flex !flex-row !items-center !gap-2 !font-semibold;
+  }
+
+  .checkline input {
+    @apply !m-0 !w-auto;
+  }
+
+  .section-title-row {
+    @apply flex items-start justify-between gap-4;
+  }
+
+  .section-title-row h2 {
+    @apply mb-1;
+  }
+
+  .status-pill {
+    @apply inline-flex rounded-full bg-[#eef1f5] px-[9px] py-1 text-xs font-bold text-[#667085];
+  }
+
+  .status-pill.active {
+    @apply bg-[#e8f7ee] text-[#177245];
+  }
+
+  .status-pill.pending {
+    @apply bg-[#fff4d6] text-[#936500];
+  }
+
+  .status-pill.suspended,
+  .status-pill.canceled,
+  .status-pill.past_due {
+    @apply bg-[#fff0f0] text-[#b42318];
+  }
+
+  .public {
+    @apply min-h-svh bg-background;
+  }
+
+  .nav {
+    @apply flex h-[70px] items-center justify-between border-b border-border bg-card px-[7%];
+  }
+
+  .nav > div {
+    @apply flex items-center gap-5;
+  }
+
+  .hero {
+    @apply mx-auto max-w-3xl px-6 py-16 text-center;
+  }
+
+  @media (max-width: 900px) {
+    .cards {
+      @apply grid-cols-2;
+    }
+
+    .files-layout {
+      @apply grid-cols-1;
+    }
+  }
+
+  @media (max-width: 600px) {
+    .cards,
+    .grid2 {
+      @apply grid-cols-1;
+    }
+
+    .page-head {
+      @apply gap-2.5;
+    }
+
+    .page-head h1 {
+      @apply text-[27px];
+    }
+  }
+}
