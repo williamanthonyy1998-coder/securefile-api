@@ -22,15 +22,29 @@ import {
   AlertCircle,
   Info,
   Menu,
+  LayoutDashboard,
 } from "lucide-react";
-import { api, API, token } from "../lib/api";
-import { connectSocket, disconnectSocket } from "../services/socket";
-import { useChatStore } from "../stores/chat.store";
-import { queryClient } from "../providers/QueryClientProvider";
-import { chatKeys } from "../api/chat.api";
+import { api, API, token } from "@/lib/api";
+import { cn } from "@/lib/utils";
+import { connectSocket, disconnectSocket } from "@/services/socket";
+import { useChatStore } from "@/stores/chat.store";
+import { queryClient } from "@/providers/QueryClientProvider";
+import { chatKeys } from "@/api/chat.api";
+import { Avatar, AvatarFallback } from "@/components/ui/avatar";
+import { Badge } from "@/components/ui/badge";
+import { Button } from "@/components/ui/button";
+import { Input } from "@/components/ui/input";
+import { ScrollArea } from "@/components/ui/scroll-area";
+import { Separator } from "@/components/ui/separator";
+import {
+  Sheet,
+  SheetContent,
+  SheetHeader,
+  SheetTitle,
+} from "@/components/ui/sheet";
 
 const tenantItems: Array<[string, string, any, string?]> = [
-  ["dashboard", "Dashboard", Bell],
+  ["dashboard", "Dashboard", LayoutDashboard],
   ["users", "User Management", UsersIcon],
   ["files", "Files", FilesIcon],
   ["shared", "Shared", Folder],
@@ -63,6 +77,58 @@ type NotificationItem = {
   readAt: string | null;
   createdAt: string;
 };
+
+function SidebarNav({
+  items,
+  chatHighlight,
+  onNavigate,
+  onChatOpen,
+}: {
+  items: Array<[string, string, any, string?]>;
+  chatHighlight: boolean;
+  onNavigate?: () => void;
+  onChatOpen?: () => void;
+}) {
+  return (
+    <nav className="flex min-h-0 flex-1 flex-col gap-0.5 overflow-y-auto px-2 pb-3 [scrollbar-width:none] [&::-webkit-scrollbar]:hidden">
+      {items.map(([to, label, Icon]) => (
+        <NavLink
+          key={to}
+          to={"/" + to}
+          onClick={() => {
+            onNavigate?.();
+            if (to === "chat") onChatOpen?.();
+          }}
+          className={({ isActive }) =>
+            cn(
+              "relative flex items-center gap-2.5 rounded-lg px-3 py-2.5 text-[13.5px] font-medium transition-colors",
+              isActive
+                ? "bg-primary text-primary-foreground"
+                : "text-sidebar-foreground hover:bg-sidebar-accent hover:text-sidebar-accent-foreground",
+              to === "chat" &&
+                chatHighlight &&
+                !isActive &&
+                "after:ml-auto after:size-1.5 after:rounded-full after:bg-primary after:shadow-[0_0_0_3px_rgba(247,127,0,0.16)] after:content-['']",
+            )
+          }
+        >
+          {({ isActive }) => (
+            <>
+              <Icon
+                size={17}
+                className={cn(
+                  "shrink-0 opacity-90",
+                  isActive && "text-primary-foreground opacity-100",
+                )}
+              />
+              <span className="truncate">{label}</span>
+            </>
+          )}
+        </NavLink>
+      ))}
+    </nav>
+  );
+}
 
 export default function Layout({ children }: { children: any }) {
   const nav = useNavigate();
@@ -106,9 +172,7 @@ export default function Layout({ children }: { children: any }) {
     try {
       const saved = JSON.parse(localStorage.getItem("sf_addons") || "{}");
       if (saved && typeof saved === "object") setAddons(saved);
-    } catch { }
-    // Existing sessions from older builds may not have login metadata yet.
-    // Fetch it once, then cache it locally for the rest of the session.
+    } catch {}
     if (!localStorage.getItem("sf_addons")) {
       api("/companies/me")
         .then((c: any) => {
@@ -118,7 +182,7 @@ export default function Layout({ children }: { children: any }) {
           if (c.subscription?.planCode)
             localStorage.setItem("sf_plan", c.subscription.planCode);
         })
-        .catch(() => { });
+        .catch(() => {});
     }
   }, [isSuper]);
 
@@ -146,7 +210,7 @@ export default function Layout({ children }: { children: any }) {
             ),
           5000,
         );
-      } catch { }
+      } catch {}
     };
 
     window.addEventListener("sf:alert", onAlert as EventListener);
@@ -178,7 +242,7 @@ export default function Layout({ children }: { children: any }) {
         window.dispatchEvent(
           new CustomEvent("sf:notification", { detail: JSON.stringify(item) }),
         );
-      } catch { }
+      } catch {}
 
       setNotifications((prev) =>
         [item, ...prev.filter((x) => x.id !== item.id)].slice(0, 100),
@@ -195,7 +259,7 @@ export default function Layout({ children }: { children: any }) {
             body: item.body,
             icon: "/favicon.svg",
           });
-        } catch { }
+        } catch {}
       }
 
       window.setTimeout(
@@ -208,17 +272,14 @@ export default function Layout({ children }: { children: any }) {
       `${API}/realtime?token=${encodeURIComponent(token())}`,
     );
 
-    source.onerror = () => {
-      // EventSource automatically reconnects. On reconnect the server sends
-      // the unread state once; there is no notification polling.
-    };
+    source.onerror = () => {};
 
     const onNotification = (event: Event) => {
       try {
         pushNotification(
           JSON.parse((event as MessageEvent).data) as NotificationItem,
         );
-      } catch { }
+      } catch {}
     };
 
     const onNotificationSync = (event: Event) => {
@@ -231,7 +292,7 @@ export default function Layout({ children }: { children: any }) {
           : [];
         notificationIds.current = new Set(unread.map((item) => item.id));
         setNotifications(unread.slice().reverse().slice(0, 100));
-      } catch { }
+      } catch {}
     };
 
     source.addEventListener("notification", onNotification);
@@ -241,11 +302,11 @@ export default function Layout({ children }: { children: any }) {
       try {
         const id = String(
           (JSON.parse((event as MessageEvent).data) as { id?: string })?.id ||
-          "",
+            "",
         );
         if (!id) return;
         setNotifications((prev) => prev.filter((n) => n.id !== id));
-      } catch { }
+      } catch {}
     };
 
     const onNotificationsReadAll = () => {
@@ -276,12 +337,10 @@ export default function Layout({ children }: { children: any }) {
   const items = isSuper
     ? superItems
     : tenantItems.filter(([to, , , _feature]) => {
-      if (role === "CLIENT" && to === "users") return false;
-
-      if (role === "EMPLOYEE" && to === "users") return false;
-
-      return !_feature || !!addons[_feature];
-    });
+        if (role === "CLIENT" && to === "users") return false;
+        if (role === "EMPLOYEE" && to === "users") return false;
+        return !_feature || !!addons[_feature];
+      });
 
   async function enableBrowserAlerts() {
     if (typeof Notification === "undefined") {
@@ -304,7 +363,7 @@ export default function Layout({ children }: { children: any }) {
       });
 
       setNotifications((prev) => prev.filter((n) => n.id !== id));
-    } catch { }
+    } catch {}
   }
 
   async function markAllRead() {
@@ -315,89 +374,73 @@ export default function Layout({ children }: { children: any }) {
 
       setNotifications([]);
       setToast(null);
-    } catch { }
+    } catch {}
   }
 
-  return (
-    <div className="app">
-      {/* =========================================================
-          SIDEBAR
-          ========================================================= */}
-      <aside
-        className={`flex h-screen flex-col overflow-hidden ${mobileNavOpen ? "mobile-open" : ""}`}
-      >
-        {/* Brand stays fixed at the top */}
-        <div className="brand shrink-0">
-          Secure<span>File</span>
-        </div>
+  const email = localStorage.getItem("sf_email") || "User";
+  const planLabel = PLAN_NAMES[localStorage.getItem("sf_plan") || ""] || "";
+  const initial = email.trim().charAt(0).toUpperCase() || "U";
 
-        {/* =======================================================
-            SCROLLABLE NAVIGATION ONLY
-            Logout is NOT inside this scroll area.
-            ======================================================= */}
-        <nav
-          className="
-            overflow-x-hidden
-            overflow-y-auto
-            h-[75%]
-            hide-scrollbar
-          "
-        >
-          {items.map(([to, label, I]) => (
-            <NavLink
-              key={to}
-              to={"/" + to}
-              className={({ isActive }) =>
-                `${isActive ? "active" : ""} ${to === "chat" && chatHighlight && !isActive ? "chat-nav-highlight" : ""}`.trim()
-              }
-              onClick={() => {
-                setMobileNavOpen(false);
-                if (to === "chat") setChatHighlight(false);
-              }}
-            >
-              <I size={17} />
-              {label}
-            </NavLink>
-          ))}
-        </nav>
+  const sidebarBody = (
+    <>
+      <div className="shrink-0 px-4 pb-5 pt-2 text-[22px] font-extrabold tracking-tight text-white">
+        Secure<span className="text-sidebar-primary">File</span>
+      </div>
 
-        {/* =======================================================
-            LOGOUT
-            Always stays at the bottom.
-            ======================================================= */}
-        <button
-          className="logout shrink-0"
+      <SidebarNav
+        items={items}
+        chatHighlight={chatHighlight}
+        onNavigate={() => setMobileNavOpen(false)}
+        onChatOpen={() => setChatHighlight(false)}
+      />
+
+      <div className="mt-auto border-t border-sidebar-border px-2 pt-3">
+        <Button
+          variant="ghost"
+          className="h-auto w-full justify-start gap-2.5 rounded-lg px-3 py-2.5 text-[13.5px] font-medium text-sidebar-foreground hover:bg-sidebar-accent hover:text-sidebar-accent-foreground"
           onClick={logout}
         >
           <LogOut size={17} />
           Logout
-        </button>
+        </Button>
+      </div>
+    </>
+  );
+
+  return (
+    <div className="flex min-h-svh bg-background">
+      <aside className="fixed inset-y-0 left-0 z-30 hidden w-[260px] flex-col border-r border-sidebar-border bg-sidebar text-sidebar-foreground md:flex">
+        {sidebarBody}
       </aside>
 
-      {/* =========================================================
-          MAIN CONTENT
-          ========================================================= */}
-      {mobileNavOpen && (
-        <button
-          className="mobile-nav-backdrop"
-          aria-label="Close navigation"
-          onClick={() => setMobileNavOpen(false)}
-        />
-      )}
+      <Sheet open={mobileNavOpen} onOpenChange={setMobileNavOpen}>
+        <SheetContent
+          side="left"
+          className="w-[270px] border-sidebar-border bg-sidebar p-0 text-sidebar-foreground [&>button]:text-white"
+        >
+          <SheetHeader className="sr-only">
+            <SheetTitle>Navigation</SheetTitle>
+          </SheetHeader>
+          <div className="flex h-full flex-col py-4">{sidebarBody}</div>
+        </SheetContent>
+      </Sheet>
 
-      <main className="min-w-0">
-        <header>
-          <button
-            className="mobile-menu-button"
+      <div className="flex min-w-0 flex-1 flex-col md:pl-[260px]">
+        <header className="sticky top-0 z-20 flex h-16 items-center gap-3 border-b border-border bg-card/90 px-3 backdrop-blur-md sm:px-6">
+          <Button
+            variant="outline"
+            size="icon"
+            className="md:hidden"
             aria-label="Open navigation"
             onClick={() => setMobileNavOpen(true)}
           >
-            <Menu size={21} />
-          </button>
-          <div className="search">
-            <Search size={16} />
+            <Menu size={18} />
+          </Button>
 
-            <input
+          <div className="relative flex min-w-0 flex-1 items-center">
+            <Search className="pointer-events-none absolute left-3 size-4 text-muted-foreground" />
+            <Input
+              className="h-10 max-w-md border-transparent bg-muted pl-9 shadow-none focus-visible:border-primary/40 focus-visible:bg-card"
               placeholder="Search files, folders, users..."
               value={q}
               onChange={(e) => setQ(e.target.value)}
@@ -409,125 +452,144 @@ export default function Layout({ children }: { children: any }) {
             />
           </div>
 
-          <div className="header-actions">
+          <div className="flex items-center gap-2 sm:gap-3">
             {!isSuper && (
-              <div className="notification-wrap">
-                <button
-                  className="notification-button"
+              <div className="relative">
+                <Button
+                  variant="outline"
+                  size="icon"
                   aria-label="Notifications"
                   onClick={() => setNotificationOpen((v) => !v)}
                 >
-                  <Bell size={19} />
-
-                  {unreadCount > 0 && (
-                    <span className="notification-badge">
-                      {unreadCount > 99 ? "99+" : unreadCount}
-                    </span>
-                  )}
-                </button>
+                  <Bell size={18} />
+                </Button>
+                {unreadCount > 0 && (
+                  <Badge className="absolute -right-1.5 -top-1.5 h-[18px] min-w-[18px] justify-center rounded-full border-2 border-card bg-primary px-1 text-[10px] text-primary-foreground hover:bg-primary">
+                    {unreadCount > 99 ? "99+" : unreadCount}
+                  </Badge>
+                )}
 
                 {notificationOpen && (
-                  <div className="notification-popover">
-                    <div className="notification-head">
+                  <div className="absolute right-0 top-12 z-50 w-[min(390px,calc(100vw-30px))] overflow-hidden rounded-xl border border-border bg-card shadow-lg">
+                    <div className="flex items-center justify-between border-b border-border px-4 py-3">
                       <div>
-                        <strong>Notifications</strong>
-
-                        <small>
+                        <p className="text-sm font-semibold">Notifications</p>
+                        <p className="text-[11px] text-muted-foreground">
                           {unreadCount
                             ? `${unreadCount} unread`
                             : "All caught up"}
-                        </small>
+                        </p>
                       </div>
-
-                      <div className="notification-head-actions">
+                      <div className="flex gap-1">
                         {browserPermission === "default" && (
-                          <button
+                          <Button
+                            variant="outline"
+                            size="icon-sm"
                             title="Enable browser alerts"
                             onClick={enableBrowserAlerts}
                           >
                             <Bell size={15} />
-                          </button>
+                          </Button>
                         )}
-
                         {unreadCount > 0 && (
-                          <button title="Mark all read" onClick={markAllRead}>
+                          <Button
+                            variant="outline"
+                            size="icon-sm"
+                            title="Mark all read"
+                            onClick={markAllRead}
+                          >
                             <CheckCheck size={15} />
-                          </button>
+                          </Button>
                         )}
-
-                        <button
+                        <Button
+                          variant="outline"
+                          size="icon-sm"
                           title="Close"
                           onClick={() => setNotificationOpen(false)}
                         >
                           <X size={15} />
-                        </button>
+                        </Button>
                       </div>
                     </div>
-
-                    <div className="notification-list">
+                    <ScrollArea className="h-[420px]">
                       {notifications.map((n) => (
                         <button
                           key={n.id}
-                          className="notification-item"
+                          className="grid w-full grid-cols-[8px_1fr] gap-2.5 border-b border-border px-4 py-3 text-left transition-colors hover:bg-muted"
                           onClick={() => {
-                            if (!n.readAt) {
-                              markRead(n.id);
-                            }
+                            if (!n.readAt) markRead(n.id);
                           }}
                         >
-                          <span className="notification-dot" />
-
+                          <span className="mt-1.5 size-2 rounded-full bg-primary" />
                           <span>
-                            <b>{n.title}</b>
-
-                            <small>{n.body}</small>
-
-                            <time>
+                            <b className="block text-sm text-foreground">
+                              {n.title}
+                            </b>
+                            <small className="mt-0.5 block text-xs text-muted-foreground">
+                              {n.body}
+                            </small>
+                            <time className="mt-1 block text-[10px] text-muted-foreground">
                               {new Date(n.createdAt).toLocaleString()}
                             </time>
                           </span>
                         </button>
                       ))}
-
                       {!notifications.length && (
-                        <div className="notification-empty">
+                        <div className="px-4 py-10 text-center text-sm text-muted-foreground">
                           No unread notifications.
                         </div>
                       )}
-                    </div>
+                    </ScrollArea>
                   </div>
                 )}
               </div>
             )}
 
-            <div className="top-user">
-              {localStorage.getItem("sf_email") || "User"}
+            <Separator orientation="vertical" className="hidden h-8 sm:block" />
 
-              {!isSuper && (
-                <small
-                  style={{
-                    display: "block",
-                    fontSize: 10,
-                    color: "#7b8799",
-                    textAlign: "right",
-                  }}
-                >
-                  {PLAN_NAMES[localStorage.getItem("sf_plan") || ""] || ""}
-                </small>
-              )}
+            <div className="flex items-center gap-2.5">
+              <Avatar className="size-9 rounded-lg">
+                <AvatarFallback className="rounded-lg bg-foreground text-xs font-bold text-background">
+                  {initial}
+                </AvatarFallback>
+              </Avatar>
+              <div className="hidden min-w-0 flex-col items-end leading-tight sm:flex">
+                <span className="max-w-[180px] truncate text-[13px] font-semibold">
+                  {email}
+                </span>
+                {!isSuper && planLabel ? (
+                  <span className="mt-0.5 text-[10px] font-semibold uppercase tracking-wider text-muted-foreground">
+                    {planLabel}
+                  </span>
+                ) : null}
+              </div>
             </div>
           </div>
         </header>
 
-        <section className="content">{children}</section>
-      </main>
+        <section className="mx-auto w-full max-w-[1400px] flex-1 px-3 py-6 sm:px-6 sm:py-7">
+          {children}
+        </section>
+      </div>
 
-      {/* =========================================================
-          SYSTEM TOAST
-          ========================================================= */}
       {systemToast && (
-        <div className={`system-toast ${systemToast.type}`} role="status">
-          <span className="system-toast-icon">
+        <div
+          className={cn(
+            "fixed bottom-5 right-5 z-[70] flex max-w-sm items-start gap-3 rounded-xl border border-border bg-card px-4 py-3 shadow-lg",
+            systemToast.type === "success" && "border-l-4 border-l-primary",
+            systemToast.type === "error" && "border-l-4 border-l-destructive",
+            systemToast.type === "info" && "border-l-4 border-l-primary",
+          )}
+          role="status"
+        >
+          <span
+            className={cn(
+              "mt-0.5",
+              systemToast.type === "error"
+                ? "text-destructive"
+                : "text-primary",
+            )}
+          >
             {systemToast.type === "success" ? (
               <CheckCircle2 size={18} />
             ) : systemToast.type === "error" ? (
@@ -536,36 +598,34 @@ export default function Layout({ children }: { children: any }) {
               <Info size={18} />
             )}
           </span>
-
-          <span>{systemToast.message}</span>
-
-          <button aria-label="Dismiss" onClick={() => setSystemToast(null)}>
+          <span className="flex-1 text-sm">{systemToast.message}</span>
+          <Button
+            variant="ghost"
+            size="icon-sm"
+            aria-label="Dismiss"
+            onClick={() => setSystemToast(null)}
+          >
             <X size={16} />
-          </button>
+          </Button>
         </div>
       )}
 
-      {/* =========================================================
-          NOTIFICATION TOAST
-          ========================================================= */}
       {toast && !isSuper && (
         <button
-          className="notification-toast"
+          className="fixed bottom-5 right-5 z-[60] flex max-w-sm items-start gap-3 rounded-xl border border-border bg-card px-4 py-3 text-left shadow-lg"
           onClick={() => {
             setNotificationOpen(true);
             setToast(null);
-
-            if (!toast.readAt) {
-              markRead(toast.id);
-            }
+            if (!toast.readAt) markRead(toast.id);
           }}
         >
-          <span>
-            <b>{toast.title}</b>
-            <small>{toast.body}</small>
+          <span className="min-w-0 flex-1">
+            <b className="block text-sm">{toast.title}</b>
+            <small className="mt-0.5 block text-xs text-muted-foreground">
+              {toast.body}
+            </small>
           </span>
-
-          <X size={16} />
+          <X size={16} className="mt-0.5 shrink-0 text-muted-foreground" />
         </button>
       )}
     </div>
