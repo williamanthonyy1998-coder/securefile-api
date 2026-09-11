@@ -16,9 +16,13 @@ const FREE_COLOR = "#e8e8e8";
 
 export default function Dashboard() {
   const [d, setD] = useState<any>();
+  const role = localStorage.getItem("sf_role") || "";
+  const isCompanyAdmin = role === "COMPANY_ADMIN";
 
   useEffect(() => {
-    api("/companies/stats").then(setD).catch(console.error);
+    api("/companies/stats", {
+      headers: { "X-SF-Force-Refresh": "true" },
+    }).then(setD).catch(console.error);
   }, []);
 
   const usedGb = Number(d?.storageUsedBytes || 0) / 1073741824;
@@ -34,12 +38,18 @@ export default function Dashboard() {
     [usedGb, freeGb],
   );
 
-  const stats: Array<[string, number, typeof Users]> = [
-    ["Users", d?.users || 0, Users],
-    ["Files", d?.files || 0, Files],
-    ["Folders", d?.folders || 0, Folder],
-    ["Unread notifications", d?.unreadNotifications || 0, Bell],
-  ];
+  const stats: Array<[string, number, typeof Users]> = isCompanyAdmin
+    ? [
+        ["Users", d?.users || 0, Users],
+        ["Files", d?.files || 0, Files],
+        ["Folders", d?.folders || 0, Folder],
+        ["Unread notifications", d?.unreadNotifications || 0, Bell],
+      ]
+    : [
+        ["My files", d?.files || 0, Files],
+        ["My folders", d?.folders || 0, Folder],
+        ["Unread notifications", d?.unreadNotifications || 0, Bell],
+      ];
 
   return (
     <div className="space-y-6">
@@ -51,7 +61,9 @@ export default function Dashboard() {
           Dashboard
         </h1>
         <p className="text-sm text-muted-foreground">
-          Everything your team needs in one place.
+          {isCompanyAdmin
+            ? "Everything your team needs in one place."
+            : `Your SecureFile workspace${d?.user?.name ? `, ${d.user.name}` : ""}.`}
         </p>
       </div>
 
@@ -73,6 +85,7 @@ export default function Dashboard() {
         ))}
       </div>
 
+      {isCompanyAdmin && (
       <Card className="shadow-sm">
         <CardHeader className="flex flex-row items-start justify-between gap-3">
           <div>
@@ -158,6 +171,7 @@ export default function Dashboard() {
           </div>
         </CardContent>
       </Card>
+      )}
     </div>
   );
 }

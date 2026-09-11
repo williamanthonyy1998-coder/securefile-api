@@ -247,6 +247,16 @@ export default function Files() {
     }
   }
 
+  function handleFolderAction(
+    f: FolderItem,
+    action: "share" | "move" | "rename" | "delete",
+  ) {
+    if (action === "share") openFolderShare(f);
+    else if (action === "move") openMove(f, "FOLDER");
+    else if (action === "rename") renameFolder(f);
+    else deleteFolder(f);
+  }
+
   function openPreview(f: FileItem) {
     setSelected(f);
     setPreviewZoom(1);
@@ -429,6 +439,7 @@ export default function Files() {
           folders={folders}
           selectedFolderId={folderId}
           onSelect={setFolderId}
+          onFolderAction={handleFolderAction}
         />
 
         <div className="panel files-main-panel">
@@ -486,6 +497,9 @@ export default function Files() {
                         {f.name}
                         {f.isPersonal && (
                           <span className="folder-badge">Personal</span>
+                        )}
+                        {f.isShared && (
+                          <span className="folder-shared-label">(Shared)</span>
                         )}
                       </button>
                     </td>

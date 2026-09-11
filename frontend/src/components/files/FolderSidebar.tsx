@@ -5,12 +5,22 @@ import {
   Folder,
   FolderOpen,
   Files as FilesIcon,
+  Edit3,
+  Move,
+  Share2,
+  Trash2,
 } from "lucide-react";
+import FileActionsMenu, {
+  type FileActionItem,
+} from "./FileActionsMenu";
+
+export type FolderAction = "share" | "move" | "rename" | "delete";
 
 type FolderSidebarProps = {
   folders: any[];
   selectedFolderId: string;
   onSelect: (folderId: string) => void;
+  onFolderAction?: (folder: any, action: FolderAction) => void;
 };
 
 function isAncestorOf(
@@ -31,12 +41,14 @@ function FolderTreeItem({
   folders,
   selectedFolderId,
   onSelect,
+  onFolderAction,
   depth,
 }: {
   folder: any;
   folders: any[];
   selectedFolderId: string;
   onSelect: (folderId: string) => void;
+  onFolderAction?: (folder: any, action: FolderAction) => void;
   depth: number;
 }) {
   const children = useMemo(
@@ -59,6 +71,40 @@ function FolderTreeItem({
 
   const isActive = selectedFolderId === folder.id;
 
+  const actionItems: FileActionItem[] = onFolderAction
+    ? [
+        {
+          key: "share",
+          label: folder.isPersonal ? "Share personal folder" : "Share",
+          icon: <Share2 size={14} />,
+          onClick: () => onFolderAction(folder, "share"),
+        },
+        ...(!folder.isPersonal
+          ? [
+              {
+                key: "move",
+                label: "Move",
+                icon: <Move size={14} />,
+                onClick: () => onFolderAction(folder, "move"),
+              },
+              {
+                key: "rename",
+                label: "Rename",
+                icon: <Edit3 size={14} />,
+                onClick: () => onFolderAction(folder, "rename"),
+              },
+              {
+                key: "delete",
+                label: "Delete",
+                icon: <Trash2 size={14} />,
+                danger: true,
+                onClick: () => onFolderAction(folder, "delete"),
+              },
+            ]
+          : []),
+      ]
+    : [];
+
   return (
     <div className="folder-tree-item">
       <div
@@ -80,6 +126,7 @@ function FolderTreeItem({
         ) : (
           <span className="folder-tree-spacer" />
         )}
+
         <button
           type="button"
           className="folder-tree-button"
@@ -97,8 +144,18 @@ function FolderTreeItem({
             {folder.name}
           </span>
           {folder.isPersonal && <span className="folder-badge">Personal</span>}
+          {folder.isShared && (
+            <span className="folder-shared-label" title="Shared with you">
+              (Shared)
+            </span>
+          )}
         </button>
+
+        {actionItems.length > 0 && (
+          <FileActionsMenu items={actionItems} align="right" />
+        )}
       </div>
+
       {expanded &&
         children.map((child) => (
           <FolderTreeItem
@@ -107,6 +164,7 @@ function FolderTreeItem({
             folders={folders}
             selectedFolderId={selectedFolderId}
             onSelect={onSelect}
+            onFolderAction={onFolderAction}
             depth={depth + 1}
           />
         ))}
@@ -118,6 +176,7 @@ export default function FolderSidebar({
   folders,
   selectedFolderId,
   onSelect,
+  onFolderAction,
 }: FolderSidebarProps) {
   const rootFolders = useMemo(
     () =>
@@ -158,6 +217,7 @@ export default function FolderSidebar({
             folders={folders}
             selectedFolderId={selectedFolderId}
             onSelect={onSelect}
+            onFolderAction={onFolderAction}
             depth={0}
           />
         ))}

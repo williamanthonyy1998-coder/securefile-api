@@ -1514,3 +1514,29 @@
   .chat-person-copy small { max-width:190px; }
 }
 
+
+.folder-shared-label {
+  display: inline-flex;
+  align-items: center;
+  margin-left: 6px;
+  color: var(--primary);
+  font-size: 10px;
+  font-weight: 700;
+  white-space: nowrap;
+}
+
+.folder-tree-row .file-actions-menu {
+  flex: 0 0 auto;
+  margin-right: 4px;
+}
+
+.folder-tree-row .file-actions-trigger {
+  opacity: 0;
+  transition: opacity 0.15s ease, background 0.15s ease;
+}
+
+.folder-tree-row:hover .file-actions-trigger,
+.folder-tree-row.active .file-actions-trigger,
+.folder-tree-row .file-actions-trigger.active {
+  opacity: 1;
+}

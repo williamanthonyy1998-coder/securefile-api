@@ -64,7 +64,7 @@ class CompanyService {
     };
   }
 
-  async getCompanyStats(companyId: string, userId: string) {
+  async getCompanyStats(companyId: string, userId: string, role?: string) {
     const company = await this.db.company.findUnique({
       where: { id: companyId },
       select: {
@@ -82,13 +82,52 @@ class CompanyService {
       where: { companyId, userId, readAt: null },
     });
 
+    // Company Admin keeps the existing workspace-wide dashboard.
+    if (role === "COMPANY_ADMIN" || role === "SUPER_ADMIN") {
+      return {
+        scope: "COMPANY",
+        users: company._count.users,
+        files: company._count.files,
+        folders: company._count.folders,
+        unreadNotifications,
+        storageLimitGb: company.storageLimitGb || 0,
+        storageUsedBytes: String(company.storageUsedBytes || 0),
+      };
+    }
+
+    // Employees and Clients must never receive company-wide counts/storage.
+    // Their dashboard is calculated strictly from resources they own.
+    const [user, myFiles, myFolders, myStorage] = await Promise.all([
+      this.db.user.findFirst({
+        where: { id: userId, companyId },
+        select: { uniqueName: true, email: true },
+      }),
+      this.db.file.count({
+        where: { companyId, ownerId: userId, deletedAt: null },
+      }),
+      this.db.folder.count({
+        where: { companyId, ownerId: userId, deletedAt: null },
+      }),
+      this.db.file.aggregate({
+        where: { companyId, ownerId: userId, deletedAt: null },
+        _sum: { sizeBytes: true },
+      }),
+    ]);
+
+    if (!user) {
+      throw new AppError("User not found", 404);
+    }
+
     return {
-      users: company._count.users,
-      files: company._count.files,
-      folders: company._count.folders,
+      scope: "USER",
+      user: {
+        name: user.uniqueName,
+        email: user.email,
+      },
+      files: myFiles,
+      folders: myFolders,
       unreadNotifications,
-      storageLimitGb: company.storageLimitGb || 0,
-      storageUsedBytes: String(company.storageUsedBytes || 0),
+      ownStorageUsedBytes: String(myStorage._sum.sizeBytes || 0),
     };
   }
 }

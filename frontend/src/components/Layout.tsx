@@ -336,11 +336,13 @@ export default function Layout({ children }: { children: any }) {
 
   const items = isSuper
     ? superItems
-    : tenantItems.filter(([to, , , _feature]) => {
-        if (role === "CLIENT" && to === "users") return false;
-        if (role === "EMPLOYEE" && to === "users") return false;
-        return !_feature || !!addons[_feature];
-      });
+    : role === "EMPLOYEE" || role === "CLIENT"
+      ? tenantItems.filter(([to]) => to === "files")
+      : tenantItems.filter(([to, , , _feature]) => {
+          if (role === "CLIENT" && to === "users") return false;
+          if (role === "EMPLOYEE" && to === "users") return false;
+          return !_feature || !!addons[_feature];
+        });
 
   async function enableBrowserAlerts() {
     if (typeof Notification === "undefined") {

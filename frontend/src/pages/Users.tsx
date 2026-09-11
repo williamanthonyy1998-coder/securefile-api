@@ -21,7 +21,7 @@ export default function Users() {
   const [notice, setNotice] = useState('');
   const [open, setOpen] = useState<'create' | 'edit' | 'permissions' | null>(null);
   const [selected, setSelected] = useState<User | null>(null);
-  const [form, setForm] = useState({ name: '', email: '', password: '', role: 'EMPLOYEE', personalFolderAllowed: true, folderIds: [] as string[] });
+  const [form, setForm] = useState({ name: '', email: '', role: 'EMPLOYEE', personalFolderAllowed: true, folderIds: [] as string[] });
   const [folderPermissions, setFolderPermissions] = useState<Record<string, FolderPermission>>({});
   const [invitationUrl, setInvitationUrl] = useState('');
 
@@ -48,7 +48,7 @@ export default function Users() {
     try {
       const d = await api('/users', { method: 'POST', body: JSON.stringify(form) });
       setInvitationUrl(d.invitationUrl || '');
-      setNotice('Invitation created successfully.');
+      setNotice(d.emailDelivered ? 'Invitation sent successfully.' : 'User created, but the invitation email could not be delivered. Check the email configuration and use Resend invitation after fixing it.');
       setOpen(null);
       await load();
     } catch (e: any) { setErr(e.message); }
@@ -127,7 +127,7 @@ export default function Users() {
   return <>
     <div className="page-head">
       <div><p className="eyebrow">Administration</p><h1>User Management</h1><p>Invite, manage and control access for Employees and Clients.</p></div>
-      <button className="btn" onClick={() => { setForm({ name: '', email: '', password: '', role: 'EMPLOYEE', personalFolderAllowed: true, folderIds: [] }); setOpen('create'); }}><UserPlus size={16}/> Add user</button>
+      <button className="btn" onClick={() => { setForm({ name: '', email: '', role: 'EMPLOYEE', personalFolderAllowed: true, folderIds: [] }); setOpen('create'); }}><UserPlus size={16}/> Add user</button>
     </div>
 
     {err && <div className="error" style={{ marginBottom: 16 }}>{err}</div>}
@@ -156,7 +156,7 @@ export default function Users() {
               <td>{u._count?.ownedFiles ?? 0}</td>
               <td>{u.personalFolderAllowed ? 'Allowed' : 'Disabled'}</td>
               <td><div className="row-actions">
-                <button className="icon-btn" title="Edit" onClick={() => { setSelected(u); setForm({ name:u.uniqueName, email:u.email, password:'', role:u.role, personalFolderAllowed:u.personalFolderAllowed, folderIds:[] }); setOpen('edit'); }}><Edit3 size={15}/></button>
+                <button className="icon-btn" title="Edit" onClick={() => { setSelected(u); setForm({ name:u.uniqueName, email:u.email, role:u.role, personalFolderAllowed:u.personalFolderAllowed, folderIds:[] }); setOpen('edit'); }}><Edit3 size={15}/></button>
                 <button className="icon-btn" title="Folder permissions" onClick={() => openPermissions(u)}><Shield size={15}/></button>
                 {u.status === 'INVITED' && <button className="icon-btn" title="Resend invitation" onClick={() => resend(u)}><Mail size={15}/></button>}
                 <button className="icon-btn" title={u.status === 'ACTIVE' ? 'Suspend' : 'Activate'} onClick={() => toggleStatus(u)}><KeyRound size={15}/></button>
@@ -176,7 +176,7 @@ export default function Users() {
         {(open === 'create' || open === 'edit') && <form onSubmit={open === 'create' ? create : saveEdit}>
           <label>Full name<input value={form.name} onChange={e => setForm({...form,name:e.target.value})} required /></label>
           <label>Email<input type="email" autoComplete="email" value={form.email} onChange={e => setForm({...form,email:e.target.value})} required disabled={open === 'edit'} /></label>
-          {open === 'create' && <><label>Password<input type="password" autoComplete="new-password" minLength={10} value={form.password} onChange={e => setForm({...form,password:e.target.value})} required placeholder="Minimum 10 characters" /></label><p className="muted" style={{marginTop:4}}>The user will receive their email, password and a 24-hour password-reset link by email.</p></>}
+          {open === 'create' && <p className="muted" style={{marginTop:4}}>SecureFile will generate a temporary password automatically and email the login details and password-reset options to the new user.</p>}
           <label>Role<select value={form.role} onChange={e => setForm({...form,role:e.target.value})}><option value="EMPLOYEE">Employee</option><option value="CLIENT">Client</option></select></label>
           <label className="checkline"><input type="checkbox" checked={form.personalFolderAllowed} onChange={e => setForm({...form,personalFolderAllowed:e.target.checked})}/> Allow personal folder</label>
           {open === 'create' && folders.filter((f:any)=>!f.isPersonal && !f.deletedAt).length > 0 && <div style={{marginTop:12}}><strong style={{display:'block',marginBottom:8}}>Grant company folders</strong><div className="permission-list">{folders.filter((f:any)=>!f.isPersonal && !f.deletedAt).map((f:any)=><label className="checkline" key={f.id}><input type="checkbox" checked={form.folderIds.includes(f.id)} onChange={e=>setForm({...form,folderIds:e.target.checked?[...form.folderIds,f.id]:form.folderIds.filter(id=>id!==f.id)})}/>{f.name}</label>)}</div></div>}

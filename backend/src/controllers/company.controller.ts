@@ -34,6 +34,7 @@ export async function getCompanyStats(
     const stats = await companyService.getCompanyStats(
       req.user.companyId,
       req.user.id,
+      req.user.role,
     );
 
     res.setHeader("Cache-Control", "private, no-store");

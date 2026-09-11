@@ -11,6 +11,7 @@ export type FolderItem = {
   parentId?: string | null;
   name: string;
   isPersonal?: boolean;
+  isShared?: boolean;
   createdAt?: string;
   updatedAt?: string;
 };
