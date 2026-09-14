@@ -1,6 +1,7 @@
 import type { Prisma, Role } from "@prisma/client";
 import { PrismaClient } from "@prisma/client";
 import { z } from "zod";
+import crypto from "node:crypto";
 
 import { env } from "../config/env";
 import { db } from "../db";
@@ -12,7 +13,6 @@ import { notify, notifyCompanyUsers } from "./notify";
 const createUserSchema = z.object({
   email: z.string().trim().email("Enter a valid email address").max(320),
   name: z.string().trim().min(2, "Name is required").max(120),
-  password: z.string().min(10, "Password must be at least 10 characters").max(128),
   role: z.enum(["EMPLOYEE", "CLIENT"]).default("EMPLOYEE"),
   folderIds: z.array(z.string()).optional().default([]),
   personalFolderAllowed: z.boolean().default(true),
@@ -26,6 +26,14 @@ function escapeHtml(value: string) {
         c
       ]!,
   );
+}
+
+function generateTemporaryPassword() {
+  const alphabet = "ABCDEFGHJKLMNPQRSTUVWXYZabcdefghijkmnopqrstuvwxyz23456789!@#$%";
+  const bytes = crypto.randomBytes(18);
+  let password = "";
+  for (let i = 0; i < bytes.length; i++) password += alphabet[bytes[i] % alphabet.length];
+  return password;
 }
 
 class UserService {
@@ -150,7 +158,7 @@ class UserService {
     if (!input.success) {
       throw new AppError(
         input.error.issues[0]?.message ||
-          "Valid name, email, password and role are required",
+          "Valid name, email and role are required",
         400,
       );
     }
@@ -158,7 +166,6 @@ class UserService {
     const {
       email,
       name,
-      password,
       role: userRole,
       folderIds,
       personalFolderAllowed,
@@ -176,6 +183,7 @@ class UserService {
     }
 
     const bcrypt = (await import("bcryptjs")).default;
+    const password = generateTemporaryPassword();
     const passwordHash = await bcrypt.hash(password, 12);
 
     const u = await this.db.user.create({
@@ -186,9 +194,8 @@ class UserService {
         passwordHash,
         role: userRole,
         // New company users remain invited until they accept the invitation.
-        // The supplied temporary password is still usable for login; accepting
-        // the invitation upgrades the account to ACTIVE and lets the user set
-        // their own password.
+        // A secure temporary password is generated server-side and emailed to
+        // the user; accepting the invitation lets the user set their own password.
         status: "INVITED",
         emailVerifiedAt: new Date(),
         personalFolderAllowed,
@@ -342,7 +349,6 @@ class UserService {
           companyId,
           recipientId: user.id,
           folderId: { not: null },
-          ownerId: actorId,
         },
       });
 
@@ -468,8 +474,23 @@ class UserService {
       throw new AppError("User not found", 404);
     }
 
+    if (u.status !== "INVITED") {
+      throw new AppError("This user has already activated their account", 409);
+    }
+
+    const temporaryPassword = generateTemporaryPassword();
+    const bcrypt = (await import("bcryptjs")).default;
+    await this.db.user.update({
+      where: { id: u.id },
+      data: { passwordHash: await bcrypt.hash(temporaryPassword, 12) },
+    });
+
     await this.db.verificationToken.updateMany({
-      where: { userId: u.id, type: "INVITATION", usedAt: null },
+      where: {
+        userId: u.id,
+        usedAt: null,
+        type: { in: ["INVITATION", "PASSWORD_RESET"] },
+      },
       data: { usedAt: new Date() },
     });
 
@@ -484,10 +505,20 @@ class UserService {
     });
 
     const url = `${env.APP_URL}/accept-invitation?token=${encodeURIComponent(token)}`;
+    const resetToken = randomToken();
+    await this.db.verificationToken.create({
+      data: {
+        userId: u.id,
+        tokenHash: hashToken(resetToken),
+        type: "PASSWORD_RESET",
+        expiresAt: new Date(Date.now() + 24 * 3600 * 1000),
+      },
+    });
+    const resetUrl = `${env.APP_URL}/reset-password?token=${encodeURIComponent(resetToken)}`;
     await sendUserEmail(
       u.email,
       "Your SecureFile invitation",
-      `<p><a href="${url}">Accept invitation</a></p><p>This invitation expires in 24 hours.</p>`,
+      `<p>Hello <strong>${escapeHtml(u.uniqueName)}</strong>,</p><p>Your SecureFile account invitation has been re-issued.</p><p><strong>Email:</strong> ${escapeHtml(u.email)}<br/><strong>Temporary password:</strong> ${escapeHtml(temporaryPassword)}</p><p><a href="${url}">Activate account and set a new password</a></p><p>You can also sign in with the temporary password and then use the password reset link below.</p><p><a href="${resetUrl}">Reset / change your password</a></p><p>This invitation and password links expire in 24 hours.</p>`,
     );
     await notify(
       u.id,

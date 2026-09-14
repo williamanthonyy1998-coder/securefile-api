@@ -247,7 +247,7 @@ export default function Files() {
     }
   }
 
-  function openPreview(f: FileItem) {
+  async function openPreview(f:any) {
     setSelected(f);
     setPreviewZoom(1);
   }
@@ -413,35 +413,19 @@ export default function Files() {
         </div>
       </div>
 
-      {error && (
-        <div className="error" style={{ marginBottom: 16 }}>
-          {error}
-        </div>
-      )}
-      {notice && (
-        <div className="success" style={{ marginBottom: 16 }}>
-          {notice}
-        </div>
-      )}
+    {error&&<div className="error" style={{marginBottom:16}}>{error}</div>}
+    {notice&&<div className="success" style={{marginBottom:16}}>{notice}</div>}
 
-      <div className="files-layout">
-        <FolderSidebar
-          folders={folders}
-          selectedFolderId={folderId}
-          onSelect={setFolderId}
-        />
-
-        <div className="panel files-main-panel">
-          <div className="toolbar" style={{ marginBottom: 12 }}>
-            <input
-              value={folderName}
-              onChange={(e) => setFolderName(e.target.value)}
-              placeholder="New folder name"
-            />
-            <button className="btn small" onClick={createFolder}>
-              <FolderPlus size={15} /> Create
-            </button>
-          </div>
+    <div className="grid2">
+      <div className="panel">
+        <div className="toolbar" style={{marginBottom:12}}>
+          <select value={folderId} onChange={e=>setFolderId(e.target.value)}>
+            <option value="">All visible files</option>
+            {folders.map(f=><option key={f.id} value={f.id}>{f.name}</option>)}
+          </select>
+          <input value={folderName} onChange={e=>setFolderName(e.target.value)} placeholder="New folder name"/>
+          <button className="btn small" onClick={createFolder}><FolderPlus size={15}/> Create</button>
+        </div>
 
           {currentFolder ? (
             <div className="breadcrumb">
@@ -459,187 +443,26 @@ export default function Files() {
             )
           )}
 
-          <table>
-            <thead>
-              <tr>
-                <th>Name</th>
-                <th>Type</th>
-                <th>Size</th>
-                <th>Source</th>
-                <th className="actions-col">Actions</th>
-              </tr>
-            </thead>
-            <tbody>
-              {folders
-                .filter((f) => f.parentId === folderId && !sp.get("q"))
-                .map((f) => (
-                  <tr key={`folder-${f.id}`}>
-                    <td>
-                      <button
-                        className="link-button"
-                        onClick={() => setFolderId(f.id)}
-                      >
-                        <Folder
-                          size={15}
-                          style={{ verticalAlign: "middle", marginRight: 6 }}
-                        />
-                        {f.name}
-                        {f.isPersonal && (
-                          <span className="folder-badge">Personal</span>
-                        )}
-                      </button>
-                    </td>
-                    <td>{f.isPersonal ? "Personal folder" : "Folder"}</td>
-                    <td>—</td>
-                    <td>—</td>
-                    <td className="actions-col">
-                      <div className="row-actions">
-                        <FileActionsMenu
-                          items={[
-                            {
-                              key: "share",
-                              label: f.isPersonal
-                                ? "Share personal folder"
-                                : "Share",
-                              icon: <Share2 size={14} />,
-                              onClick: () => openFolderShare(f),
-                            },
-                            ...(!f.isPersonal
-                              ? [
-                                  {
-                                    key: "move",
-                                    label: "Move",
-                                    icon: <Move size={14} />,
-                                    onClick: () =>
-                                      openMove(f, "FOLDER" as const),
-                                  },
-                                  ...(addons.rename
-                                    ? [
-                                        {
-                                          key: "rename",
-                                          label: "Rename",
-                                          icon: <Edit3 size={14} />,
-                                          onClick: () => renameFolder(f),
-                                        },
-                                      ]
-                                    : []),
-                                  {
-                                    key: "delete",
-                                    label: "Delete",
-                                    icon: <Trash2 size={14} />,
-                                    danger: true,
-                                    onClick: () => deleteFolder(f),
-                                  },
-                                ]
-                              : []),
-                          ]}
-                        />
-                      </div>
-                    </td>
-                  </tr>
-                ))}
-              {files.map((f) => (
-                <tr key={f.id}>
-                  <td>
-                    <button
-                      className="link-button file-name-button"
-                      onClick={() => openPreview(f)}
-                      onDoubleClick={() => openFilePage(f)}
-                      title="Click to preview • Double-click to open"
-                    >
-                      <FileTypeIcon mimeType={f.mimeType} fileName={f.name} />
-                      <span className="file-name-text">{f.name}</span>
-                    </button>
-                    <small style={{ display: "block", color: "#8a96a8" }}>
-                      {f.folder?.name || "No folder"}
-                    </small>
-                  </td>
-                  <td>{f.mimeType}</td>
-                  <td>{(Number(f.sizeBytes) / 1024).toFixed(1)} KB</td>
-                  <td>{f.source || "UPLOAD"}</td>
-                  <td className="actions-col">
-                    <div className="row-actions">
-                      <FileActionsMenu
-                        items={[
-                          ...(addons.preview
-                            ? [
-                                {
-                                  key: "preview",
-                                  label: "Preview",
-                                  icon: <Eye size={14} />,
-                                  onClick: () => openPreview(f),
-                                },
-                                {
-                                  key: "open-page",
-                                  label: "Open in new page",
-                                  icon: <ExternalLink size={14} />,
-                                  onClick: () => openFilePage(f),
-                                },
-                              ]
-                            : []),
-                          {
-                            key: "download",
-                            label: "Download",
-                            icon: <Download size={14} />,
-                            onClick: () => download(f),
-                          },
-                          ...(addons.rename
-                            ? [
-                                {
-                                  key: "rename",
-                                  label: "Rename",
-                                  icon: <Edit3 size={14} />,
-                                  onClick: () => renameFile(f),
-                                },
-                              ]
-                            : []),
-                          {
-                            key: "move",
-                            label: "Move",
-                            icon: <Move size={14} />,
-                            onClick: () => openMove(f, "FILE" as const),
-                          },
-                          {
-                            key: "share",
-                            label: "Share",
-                            icon: <Share2 size={14} />,
-                            onClick: () => openShare(f),
-                          },
-                          ...(localStorage.getItem("sf_role") ===
-                          "COMPANY_ADMIN"
-                            ? [
-                                {
-                                  key: "task",
-                                  label: "Assign task",
-                                  icon: <ClipboardPlus size={14} />,
-                                  onClick: () => openTask(f),
-                                },
-                              ]
-                            : []),
-                          {
-                            key: "delete",
-                            label: "Delete",
-                            icon: <Trash2 size={14} />,
-                            danger: true,
-                            onClick: () => deleteFile(f),
-                          },
-                        ]}
-                      />
-                    </div>
-                  </td>
-                </tr>
-              ))}
-            </tbody>
-          </table>
-          {!files.length &&
-            !folders.filter((f) => f.parentId === folderId && !sp.get("q"))
-              .length && (
-              <div className="empty-company">
-                <h3>No files here</h3>
-                <p>Upload a file or create a folder to get started.</p>
-              </div>
+        <table>
+          <thead><tr><th>Name</th><th>Type</th><th>Size</th><th>Source</th><th>Actions</th></tr></thead>
+          <tbody>
+            {folders.filter(f=>f.parentId===folderId && !sp.get('q')).map(f=>
+              <tr key={`folder-${f.id}`}><td><button className="link-button" onClick={()=>setFolderId(f.id)}><Folder size={15} style={{verticalAlign:'middle',marginRight:6}}/>{f.name}</button></td><td>Folder</td><td>—</td><td>—</td><td><button className="icon-btn" title="Share" onClick={()=>openFolderShare(f)}><Share2 size={14}/></button><button className="icon-btn" onClick={()=>renameFolder(f)}><Edit3 size={14}/></button><button className="icon-btn danger" onClick={()=>deleteFolder(f)}><Trash2 size={14}/></button></td></tr>
             )}
-        </div>
+            {files.map(f=><tr key={f.id}>
+              <td><button className="link-button file-name-button" onClick={()=>openPreview(f)} onDoubleClick={()=>openFilePage(f)} title="Double-click to open">{f.name}</button><small style={{display:'block',color:'#8a96a8'}}>{f.folder?.name||'No folder'}</small></td>
+              <td>{f.mimeType}</td><td>{(Number(f.sizeBytes)/1024).toFixed(1)} KB</td><td>{f.source||'UPLOAD'}</td>
+              <td><div className="row-actions">
+                <button className="icon-btn" title="Preview" onClick={()=>openPreview(f)}><Eye size={14}/></button><button className="icon-btn" title="Open in new page" onClick={()=>openFilePage(f)}><ExternalLink size={14}/></button>
+                <button className="icon-btn" title="Download" onClick={()=>download(f)}><Download size={14}/></button>
+                <button className="icon-btn" title="Rename" onClick={()=>renameFile(f)}><Edit3 size={14}/></button>
+                <button className="icon-btn" title="Share" onClick={()=>openShare(f)}><Share2 size={14}/></button>
+                <button className="icon-btn danger" title="Delete" onClick={()=>deleteFile(f)}><Trash2 size={14}/></button>
+              </div></td>
+            </tr>)}
+          </tbody>
+        </table>
+        {!files.length && !folders.filter(f=>f.parentId===folderId && !sp.get('q')).length && <div className="empty-company"><h3>No files here</h3><p>Upload a file or create a folder to get started.</p></div>}
       </div>
 
       {addons.preview && selected && (
@@ -987,6 +810,7 @@ export default function Files() {
           </div>
         </div>
       )}
+    </div>
     </>
   );
 }

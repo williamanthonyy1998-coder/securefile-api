@@ -11,8 +11,21 @@ class FolderService {
 
   async listFolders(userId: string, role: string, companyId: string) {
     const ids = await listVisibleFolderIds(userId, role, companyId);
+    const sharedRows = await this.db.share.findMany({
+      where: {
+        companyId,
+        recipientId: userId,
+        folderId: { not: null },
+        canView: true,
+        OR: [{ expiresAt: null }, { expiresAt: { gt: new Date() } }],
+      },
+      select: { folderId: true },
+    });
+    const sharedIds = new Set(
+      sharedRows.map((row) => row.folderId).filter(Boolean) as string[],
+    );
 
-    return this.db.folder.findMany({
+    const folders = await this.db.folder.findMany({
       where: { companyId, deletedAt: null, id: { in: ids } },
       select: {
         id: true,
@@ -26,6 +39,11 @@ class FolderService {
       },
       orderBy: [{ isPersonal: "desc" }, { name: "asc" }],
     });
+
+    return folders.map((folder) => ({
+      ...folder,
+      isShared: sharedIds.has(folder.id),
+    }));
   }
 
   async createFolder(
