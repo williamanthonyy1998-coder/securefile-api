@@ -2,6 +2,7 @@ import { useEffect, useState } from 'react';
 import { api } from '../lib/api';
 import { RefreshCw, RotateCcw, Trash2, FileText, Folder } from 'lucide-react';
 
+import { sfConfirm } from "../lib/dialogs";
 export default function Trash() {
   const [data, setData] = useState<any>({ files: [], folders: [] });
   const [error, setError] = useState('');
@@ -9,7 +10,7 @@ export default function Trash() {
   const load = async () => { try { setError(''); setData(await api('/trash')); } catch (e:any) { setError(e.message); } };
   useEffect(() => { load(); }, []);
   async function restore(type:string,id:string){try{await api(`/trash/${type.toLowerCase()}s/${id}/restore`,{method:'POST'});setNotice('Restored successfully.');load();}catch(e:any){setError(e.message)}}
-  async function permanent(type:string,id:string,name:string){if(!confirm(`Permanently delete “${name}”? This cannot be undone.`))return;try{await api(`/trash/${type.toLowerCase()}s/${id}`,{method:'DELETE'});setNotice('Permanently deleted.');load();}catch(e:any){setError(e.message)}}
+  async function permanent(type:string,id:string,name:string){if(!(await sfConfirm(`Permanently delete “${name}”? This cannot be undone.`, { title: "Permanent deletion", danger: true, confirmLabel: "Delete permanently" })))return;try{await api(`/trash/${type.toLowerCase()}s/${id}`,{method:'DELETE'});setNotice('Permanently deleted.');load();}catch(e:any){setError(e.message)}}
   const expiry=(d:string)=>{const t=new Date(d).getTime()+30*86400000;return `Auto-deletes ${new Date(t).toLocaleDateString()}`};
   return <>
     <div className="page-head"><div><p className="eyebrow">Workspace</p><h1>Trash</h1><p>Deleted files and folders stay here for 30 days before permanent deletion.</p></div><button className="btn secondary" onClick={load}><RefreshCw size={15}/> Refresh</button></div>

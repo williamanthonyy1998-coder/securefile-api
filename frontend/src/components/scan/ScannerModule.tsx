@@ -10,6 +10,7 @@ import {
   ChevronLeft,
   ChevronRight,
 } from "lucide-react";
+import { sfConfirm } from "../../lib/dialogs";
 import MobileCameraScanner from "./MobileCameraScanner";
 import BluetoothScanner from "./BluetoothScanner";
 import type { ScanPage } from "./types";
@@ -167,8 +168,8 @@ export default function ScannerModule({ setErr }: any) {
       return next;
     });
   }
-  function clearPages() {
-    if (confirm("Remove all scanned pages from this draft?")) setPages([]);
+  async function clearPages() {
+    if (await sfConfirm("Remove all scanned pages from this draft?", { title: "Clear scanned pages", danger: true, confirmLabel: "Remove all" })) setPages([]);
   }
   async function savePdf() {
     if (!pages.length) return;

@@ -2,6 +2,7 @@ import { useState } from "react";
 import { api } from "../../lib/api";
 import { Trash2 } from "lucide-react";
 
+import { sfConfirm } from "../../lib/dialogs";
 export default function RequestsPanel({ data, users, refresh, setErr }: any) {
   const [type, setType] = useState("FILE"),
     [name, setName] = useState(""),
@@ -133,7 +134,7 @@ export default function RequestsPanel({ data, users, refresh, setErr }: any) {
                       className="icon-btn danger"
                       title="Delete request"
                       onClick={async () => {
-                        if (confirm("Delete this pending request?")) {
+                        if (await sfConfirm("Delete this pending request?", { title: "Delete request", danger: true, confirmLabel: "Delete request" })) {
                           try {
                             await api("/workspace/requests/" + x.id, {
                               method: "DELETE",

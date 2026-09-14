@@ -82,6 +82,10 @@ class SharingService {
       throw new AppError("Share permission denied", 403);
     }
 
+    // Public folder links are invitation-style links: they never expose folder
+    // contents anonymously. The recipient must authenticate to a SecureFile
+    // account in this workspace before the folder permissions can be used.
+
     if (Boolean(permissions.share)) {
       await requireAddon(companyId, "reshare");
     }
@@ -220,6 +224,10 @@ class SharingService {
     for (const key of permissionKeys) {
       if (input[key] !== undefined) data[key] = Boolean(input[key]);
     }
+
+    // Public folder shares are authenticated links, so their selected folder
+    // permissions remain enforceable after sign-in. Internal shares keep the
+    // same permission model as before.
     if (data.canShare === true) {
       await requireAddon(s.companyId, "reshare");
     }

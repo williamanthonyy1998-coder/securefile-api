@@ -334,14 +334,32 @@ export default function Layout({ children }: { children: any }) {
     [notifications],
   );
 
+  useEffect(() => {
+    if (isSuper || !token()) return;
+    api("/users/me", { headers: { "X-SF-Force-Refresh": "true" } })
+      .then((me: any) => {
+        if (!me) return;
+        if (me.email) localStorage.setItem("sf_email", me.email);
+        if (me.role) localStorage.setItem("sf_role", me.role);
+        localStorage.setItem("sf_sidebar_items", JSON.stringify(me.sidebarItems || ["files"]));
+      })
+      .catch(() => {});
+  }, [isSuper]);
+
+  let configuredSidebar: string[] = [];
+  try {
+    configuredSidebar = JSON.parse(localStorage.getItem("sf_sidebar_items") || "[]");
+  } catch {}
+  if (!configuredSidebar.length && (role === "EMPLOYEE" || role === "CLIENT")) configuredSidebar = ["files"];
+
   const items = isSuper
     ? superItems
     : role === "EMPLOYEE" || role === "CLIENT"
-      ? tenantItems.filter(([to]) => to === "files")
-      : tenantItems.filter(([to, , , _feature]) => {
+      ? tenantItems.filter(([to, , , feature]) => configuredSidebar.includes(to) && to !== "users" && (!feature || !!addons[feature]))
+      : tenantItems.filter(([to, , , feature]) => {
           if (role === "CLIENT" && to === "users") return false;
           if (role === "EMPLOYEE" && to === "users") return false;
-          return !_feature || !!addons[_feature];
+          return !feature || !!addons[feature];
         });
 
   async function enableBrowserAlerts() {

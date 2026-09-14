@@ -3,6 +3,7 @@ import { Router } from "express";
 import {
   acceptInvitation,
   createUser,
+  getCurrentUser,
   deleteUser,
   getUserMeta,
   getUserPermissions,
@@ -18,7 +19,8 @@ import { activeSubscription } from "../middleware/subscription";
 
 const router = Router();
 
-router.get("/", auth, listUsers);
+router.get("/", auth, role("COMPANY_ADMIN"), listUsers);
+router.get("/me", auth, getCurrentUser);
 router.get("/chat", auth, listChatUsers);
 router.get("/meta", auth, role("COMPANY_ADMIN"), getUserMeta);
 

@@ -318,6 +318,7 @@ class AuthService {
         companyId: u.companyId,
         planCode: subscription?.planCode || null,
         addons: subscription?.addons || {},
+        sidebarItems: u.sidebarItems || ["files"],
       },
     };
   }

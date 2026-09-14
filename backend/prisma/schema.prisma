@@ -83,6 +83,7 @@ model User {
   status                UserStatus @default(INVITED)
   emailVerifiedAt       DateTime?
   personalFolderAllowed Boolean    @default(true)
+  sidebarItems          String[]   @default(["files"])
   createdAt             DateTime   @default(now())
   updatedAt             DateTime   @updatedAt
 

@@ -25,6 +25,7 @@ import {
 } from "../api/files.api";
 import { useFileUploader } from "../hooks/useFileUploader";
 import { UPLOAD_ACCEPT, assertAllowedUploadFile } from "../utils/uploadAllowlist";
+import { sfConfirm, sfPrompt } from "../lib/dialogs";
 import {
   Download,
   Edit3,
@@ -55,7 +56,7 @@ export default function Files() {
   const [sp] = useSearchParams();
   const navigate = useNavigate();
   const ref = useRef<HTMLInputElement>(null);
-  const [folderId, setFolderId] = useState("");
+  const [folderId, setFolderId] = useState(() => sp.get("folderId") || "");
   const [selected, setSelected] = useState<FileItem | null>(null);
   const [previewZoom, setPreviewZoom] = useState(1);
   const [folderName, setFolderName] = useState("");
@@ -115,6 +116,11 @@ export default function Files() {
   const fileTasks = fileTasksQuery.data ?? [];
   const preview = previewQuery.data?.url || "";
   const previewMime = previewQuery.data?.mimeType || selected?.mimeType || "";
+
+  useEffect(() => {
+    const requestedFolderId = sp.get("folderId") || "";
+    if (requestedFolderId !== folderId) setFolderId(requestedFolderId);
+  }, [sp]);
 
   useEffect(() => {
     try {
@@ -193,7 +199,7 @@ export default function Files() {
   }
 
   async function renameFile(f: FileItem) {
-    const name = window.prompt("New file name", f.name);
+    const name = await sfPrompt("Choose a clear name for this file.", f.name, { title: "Rename file", confirmLabel: "Rename file" });
     if (!name || name === f.name) return;
     try {
       await updateFileMutation.mutateAsync({
@@ -208,7 +214,7 @@ export default function Files() {
   }
 
   async function deleteFile(f: FileItem) {
-    if (!confirm(`Delete "${f.name}"?`)) return;
+    if (!(await sfConfirm(`Delete “${f.name}”? This action will move the file to Trash.`, { title: "Delete file", danger: true, confirmLabel: "Delete file" }))) return;
     try {
       await deleteFileMutation.mutateAsync(f.id);
       if (selected?.id === f.id) closePreview();
@@ -220,7 +226,7 @@ export default function Files() {
   }
 
   async function renameFolder(f: FolderItem) {
-    const name = window.prompt("New folder name", f.name);
+    const name = await sfPrompt("Choose a clear name for this folder.", f.name, { title: "Rename folder", confirmLabel: "Rename folder" });
     if (!name || name === f.name) return;
     try {
       await updateFolderMutation.mutateAsync({
@@ -235,8 +241,7 @@ export default function Files() {
   }
 
   async function deleteFolder(f: FolderItem) {
-    if (!confirm(`Delete folder "${f.name}" and its empty child structure?`))
-      return;
+    if (!(await sfConfirm(`Delete folder “${f.name}” and its empty child structure?`, { title: "Delete folder", danger: true, confirmLabel: "Delete folder" }))) return;
     try {
       await deleteFolderMutation.mutateAsync(f.id);
       if (folderId === f.id) setFolderId("");
@@ -443,32 +448,45 @@ export default function Files() {
         />
 
         <div className="panel files-main-panel">
-          <div className="toolbar" style={{ marginBottom: 12 }}>
-            <input
-              value={folderName}
-              onChange={(e) => setFolderName(e.target.value)}
-              placeholder="New folder name"
-            />
-            <button className="btn small" onClick={createFolder}>
-              <FolderPlus size={15} /> Create
-            </button>
-          </div>
-
-          {currentFolder ? (
-            <div className="breadcrumb">
-              <Folder size={15} /> {currentFolder.name}{" "}
-              <ChevronRight size={14} />
-              <button className="link-button" onClick={() => setFolderId("")}>
-                All files
+          <div className="files-create-bar">
+            <div className="files-create-copy">
+              <FolderPlus size={17} />
+              <div>
+                <strong>Create folder</strong>
+                <span>Add a folder in the current location</span>
+              </div>
+            </div>
+            <div className="files-create-controls">
+              <label className="files-folder-name-field">
+                <span>Folder name</span>
+                <input
+                  value={folderName}
+                  onChange={(e) => setFolderName(e.target.value)}
+                  onKeyDown={(e) => { if (e.key === "Enter") createFolder(); }}
+                  placeholder="Enter a folder name"
+                  aria-label="New folder name"
+                />
+              </label>
+              <button className="btn small" disabled={!folderName.trim() || createFolderMutation.isPending} onClick={createFolder}>
+                <FolderPlus size={15} /> {createFolderMutation.isPending ? "Creating…" : "Create folder"}
               </button>
             </div>
-          ) : (
-            !sp.get("q") && (
-              <div className="breadcrumb">
-                <Folder size={15} /> All visible files
+          </div>
+
+          <div className="files-context-bar">
+            <div className="files-context-main">
+              <span className="files-context-icon"><Folder size={16} /></span>
+              <div>
+                <strong>{currentFolder?.name || (sp.get("q") ? "Search results" : "All visible files")}</strong>
+                <span>{currentFolder ? "Folder contents" : sp.get("q") ? `Results for “${sp.get("q")}"` : "Files you can access in this workspace"}</span>
               </div>
-            )
-          )}
+            </div>
+            {currentFolder && (
+              <button className="btn secondary small" type="button" onClick={() => setFolderId("")}>
+                <ChevronRight size={14} className="files-back-icon" /> Back to all files
+              </button>
+            )}
+          </div>
 
           <table>
             <thead>
@@ -481,77 +499,6 @@ export default function Files() {
               </tr>
             </thead>
             <tbody>
-              {folders
-                .filter((f) => f.parentId === folderId && !sp.get("q"))
-                .map((f) => (
-                  <tr key={`folder-${f.id}`}>
-                    <td>
-                      <button
-                        className="link-button"
-                        onClick={() => setFolderId(f.id)}
-                      >
-                        <Folder
-                          size={15}
-                          style={{ verticalAlign: "middle", marginRight: 6 }}
-                        />
-                        {f.name}
-                        {f.isPersonal && (
-                          <span className="folder-badge">Personal</span>
-                        )}
-                        {f.isShared && (
-                          <span className="folder-shared-label">(Shared)</span>
-                        )}
-                      </button>
-                    </td>
-                    <td>{f.isPersonal ? "Personal folder" : "Folder"}</td>
-                    <td>—</td>
-                    <td>—</td>
-                    <td className="actions-col">
-                      <div className="row-actions">
-                        <FileActionsMenu
-                          items={[
-                            {
-                              key: "share",
-                              label: f.isPersonal
-                                ? "Share personal folder"
-                                : "Share",
-                              icon: <Share2 size={14} />,
-                              onClick: () => openFolderShare(f),
-                            },
-                            ...(!f.isPersonal
-                              ? [
-                                  {
-                                    key: "move",
-                                    label: "Move",
-                                    icon: <Move size={14} />,
-                                    onClick: () =>
-                                      openMove(f, "FOLDER" as const),
-                                  },
-                                  ...(addons.rename
-                                    ? [
-                                        {
-                                          key: "rename",
-                                          label: "Rename",
-                                          icon: <Edit3 size={14} />,
-                                          onClick: () => renameFolder(f),
-                                        },
-                                      ]
-                                    : []),
-                                  {
-                                    key: "delete",
-                                    label: "Delete",
-                                    icon: <Trash2 size={14} />,
-                                    danger: true,
-                                    onClick: () => deleteFolder(f),
-                                  },
-                                ]
-                              : []),
-                          ]}
-                        />
-                      </div>
-                    </td>
-                  </tr>
-                ))}
               {files.map((f) => (
                 <tr key={f.id}>
                   <td>
@@ -574,6 +521,7 @@ export default function Files() {
                   <td className="actions-col">
                     <div className="row-actions">
                       <FileActionsMenu
+                        variant="file"
                         items={[
                           ...(addons.preview
                             ? [
@@ -645,9 +593,7 @@ export default function Files() {
               ))}
             </tbody>
           </table>
-          {!files.length &&
-            !folders.filter((f) => f.parentId === folderId && !sp.get("q"))
-              .length && (
+          {!files.length && (
               <div className="empty-company">
                 <h3>No files here</h3>
                 <p>Upload a file or create a folder to get started.</p>
@@ -906,7 +852,7 @@ export default function Files() {
                 onChange={(e) => setShareType(e.target.value)}
               >
                 <option value="INTERNAL">Internal company user</option>
-                <option value="PUBLIC">Public link</option>
+                <option value="PUBLIC">Public secure link{shareFolder ? " · sign-in required" : " · file"}</option>
               </select>
             </label>
             {shareType === "INTERNAL" && (
@@ -928,16 +874,31 @@ export default function Files() {
               </label>
             )}
             <div className="modal-section">Permissions</div>
+            {shareType === "PUBLIC" && (
+              <p className="share-permission-note">
+                {shareFolder
+                  ? "Public folder links require a SecureFile account. After sign-in, the selected permissions are enforced by the workspace."
+                  : "Public file links can be view-only or downloadable. The selected permissions are enforced by the server."}
+              </p>
+            )}
             <div className="permission-checks" style={{ paddingLeft: 0 }}>
               {(
-                [
-                  "view",
-                  "download",
-                  "upload",
-                  "edit",
-                  "delete",
-                  ...(addons.reshare ? ["share"] : []),
-                ] as Array<keyof typeof sharePerms>
+                (shareType === "PUBLIC"
+                  ? ([
+                      "view",
+                      "download",
+                      ...(shareFolder
+                        ? ["upload", "edit", "delete", ...(addons.reshare ? ["share"] : [])]
+                        : []),
+                    ] as Array<keyof typeof sharePerms>)
+                  : ([
+                      "view",
+                      "download",
+                      "upload",
+                      "edit",
+                      "delete",
+                      ...(addons.reshare ? ["share"] : []),
+                    ] as Array<keyof typeof sharePerms>))
               ).map((k) => (
                 <label className="tiny-check" key={k}>
                   <input
@@ -951,7 +912,7 @@ export default function Files() {
                 </label>
               ))}
             </div>
-            {shareType === "PUBLIC" && (
+            {shareType === "PUBLIC" && !shareFolder && (
               <>
                 <label>
                   Password (optional)
@@ -973,24 +934,26 @@ export default function Files() {
               </>
             )}
             {publicToken && (
-              <div className="success">
-                Public token created.{" "}
+              <div className="share-created-card">
+                <div className="share-created-copy">
+                  <b>Public link ready</b>
+                  <span>Share this secure link with the recipient.</span>
+                </div>
                 <button
-                  className="link-button"
-                  onClick={() =>
-                    navigator.clipboard.writeText(
-                      `${window.location.origin}/public-share/${publicToken}`,
-                    )
-                  }
+                  className="btn small secondary"
+                  onClick={async () => {
+                    await navigator.clipboard.writeText(`${window.location.origin}/public-share/${publicToken}`);
+                    setNotice("Public link copied.");
+                  }}
                 >
-                  <Copy size={14} /> Copy public link
+                  <Copy size={14} /> Copy link
                 </button>
               </div>
             )}
             <div className="modal-actions">
               <button
                 className="btn secondary"
-                onClick={() => setShareFile(null)}
+                onClick={() => { setShareFile(null); setShareFolder(null); }}
               >
                 Close
               </button>

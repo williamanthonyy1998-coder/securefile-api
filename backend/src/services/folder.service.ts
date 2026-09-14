@@ -14,10 +14,12 @@ class FolderService {
     const sharedRows = await this.db.share.findMany({
       where: {
         companyId,
-        recipientId: userId,
         folderId: { not: null },
         canView: true,
-        OR: [{ expiresAt: null }, { expiresAt: { gt: new Date() } }],
+        AND: [
+          { OR: [{ recipientId: userId, type: "INTERNAL" }, { type: "PUBLIC" }] },
+          { OR: [{ expiresAt: null }, { expiresAt: { gt: new Date() } }] },
+        ],
       },
       select: { folderId: true },
     });
