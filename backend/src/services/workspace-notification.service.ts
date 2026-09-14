@@ -1,10 +1,7 @@
 import { PrismaClient } from "@prisma/client";
 
 import { db } from "../db";
-import {
-  emitNotificationRead,
-  emitNotificationsReadAll,
-} from "./realtime";
+import { emitNotificationToUser } from "../sockets/socket.server";
 
 class WorkspaceNotificationService {
   constructor(private readonly db: PrismaClient) {}
@@ -24,7 +21,7 @@ class WorkspaceNotificationService {
     });
 
     if (result.count) {
-      emitNotificationRead(userId, notificationId);
+      emitNotificationToUser(userId, "notification:read", { id: notificationId });
     }
 
     return result;
@@ -37,7 +34,7 @@ class WorkspaceNotificationService {
     });
 
     if (result.count) {
-      emitNotificationsReadAll(userId);
+      emitNotificationToUser(userId, "notifications:read-all", { at: new Date().toISOString() });
     }
 
     return result;

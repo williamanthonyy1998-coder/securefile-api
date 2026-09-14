@@ -48,7 +48,7 @@ export default function Settings() {
       </div>
 
       <div className="grid gap-4 lg:grid-cols-[220px_minmax(0,1fr)]">
-        <aside className="h-fit rounded-xl border border-border bg-card p-2 shadow-sm">
+        <aside className="settings-tabs h-fit rounded-xl border border-border bg-card p-2 shadow-sm">
           <nav className="flex flex-col gap-0.5">
             {TABS.map(({ id, label, icon: Icon }) => (
               <button

@@ -42,79 +42,6 @@ export function token() {
   return localStorage.getItem("sf_token") || "";
 }
 
-function dispatchAlert(
-  type: "success" | "error" | "info",
-  message: string
-) {
-  if (typeof window !== "undefined" && message) {
-    window.dispatchEvent(
-      new CustomEvent("sf:alert", {
-        detail: {
-          type,
-          message,
-        },
-      })
-    );
-  }
-}
-
-function friendlySuccess(path: string, method: string, data: any) {
-  if (data?.message && typeof data.message === "string") {
-    return data.message;
-  }
-
-  const p = path.toLowerCase();
-
-  if (p.includes("/upload")) {
-    return "File uploaded successfully.";
-  }
-
-  if (p.includes("/move")) {
-    return "Moved successfully.";
-  }
-
-  if (p.includes("/share")) {
-    return "Sharing updated successfully.";
-  }
-
-  if (p.includes("/rename")) {
-    return "Renamed successfully.";
-  }
-
-  if (p.includes("/delete") || p.includes("/trash")) {
-    return "Action completed successfully.";
-  }
-
-  if (p.includes("/fax")) {
-    return method === "POST"
-      ? "Fax request submitted successfully."
-      : "Fax action completed successfully.";
-  }
-
-  if (p.includes("/scan")) {
-    return "Scan action completed successfully.";
-  }
-
-  if (p.includes("/checkout")) {
-    return "Checkout session created. Redirecting to secure payment.";
-  }
-
-  if (method === "POST") {
-    return "Saved successfully.";
-  }
-
-  if (method === "PATCH") {
-    return "Updated successfully.";
-  }
-
-  if (method === "DELETE") {
-    return "Deleted successfully.";
-  }
-
-  return "Action completed successfully.";
-}
-
-
 const GET_CACHE_TTL_MS = 60000;
 const GET_CACHE_STALE_MS = 10 * 60 * 1000;
 const getCache = new Map<string, { expiresAt: number; data: any }>();
@@ -168,7 +95,6 @@ export async function api(path: string, opts: RequestInit = {}) {
 
   const run = async () => {
     const headers = new Headers(opts.headers);
-    const silentAlert = headers.get("X-Silent-Alert") === "true";
     headers.delete('X-SF-Force-Refresh');
 
     if (!(opts.body instanceof FormData)) headers.set("Content-Type", "application/json");
@@ -183,7 +109,6 @@ export async function api(path: string, opts: RequestInit = {}) {
     if(text){ try{data=JSON.parse(text)}catch{data={error:text}} }
 
     if (!response.ok) {
-      if (!silentAlert) dispatchAlert("error", data?.error || `Request failed (${response.status})`);
       if (response.status === 401 && authToken && !path.startsWith("/auth/")) {
         localStorage.removeItem("sf_token"); localStorage.removeItem("sf_role"); localStorage.removeItem("sf_email"); localStorage.removeItem("sf_user_id"); localStorage.removeItem("sf_addons");
         clearPersisted();
@@ -192,7 +117,6 @@ export async function api(path: string, opts: RequestInit = {}) {
       throw new Error(data?.error || `Request failed (${response.status})`);
     }
 
-    if (!silentAlert && !["GET","HEAD","OPTIONS"].includes(method) && !path.includes("/workspace/notifications")) dispatchAlert("success", friendlySuccess(path,method,data));
     if(isRead){
       const entry={expiresAt:Date.now()+GET_CACHE_TTL_MS,data};
       getCache.set(cacheKey,entry); writePersisted(cacheKey,entry);
@@ -236,7 +160,6 @@ export async function getPrivatePreviewUrl(fileId: string) {
       const data = JSON.parse(text);
       message = data?.error || message;
     } catch {}
-    dispatchAlert("error", message);
     throw new Error(message);
   }
 
@@ -271,7 +194,6 @@ export async function downloadPrivateFile(fileId: string, fallbackName = "downlo
     } catch {
       // Keep the plain-text response when it is not JSON.
     }
-    dispatchAlert("error", message);
     throw new Error(message);
   }
 
@@ -384,18 +306,8 @@ export async function directUpload(
       }),
     });
 
-    dispatchAlert(
-      "success",
-      "File uploaded successfully."
-    );
-
     return committed;
   } catch (e: any) {
-    dispatchAlert(
-      "error",
-      e?.message || "File upload failed."
-    );
-
     throw e;
   }
 }

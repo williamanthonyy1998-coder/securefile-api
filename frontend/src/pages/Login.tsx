@@ -24,6 +24,7 @@ export default function Login() {
 
       localStorage.setItem("sf_token", d.token);
       localStorage.setItem("sf_email", d.user.email);
+      if (d.user.uniqueName) localStorage.setItem("sf_name", d.user.uniqueName);
       localStorage.setItem("sf_user_id", d.user.id);
       localStorage.setItem("sf_role", d.user.role);
       localStorage.setItem("sf_addons", JSON.stringify(d.user.addons || {}));

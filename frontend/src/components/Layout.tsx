@@ -1,4 +1,4 @@
-import { NavLink, useNavigate } from "react-router-dom";
+import { NavLink, useLocation, useNavigate } from "react-router-dom";
 import { useEffect, useMemo, useRef, useState } from "react";
 import {
   Bell,
@@ -18,14 +18,12 @@ import {
   Search,
   CheckCheck,
   X,
-  CheckCircle2,
-  AlertCircle,
-  Info,
   Menu,
   LayoutDashboard,
 } from "lucide-react";
-import { api, API, token } from "@/lib/api";
+import { api, token } from "@/lib/api";
 import { cn } from "@/lib/utils";
+import PageSkeleton from "@/components/PageSkeleton";
 import { connectSocket, disconnectSocket } from "@/services/socket";
 import { useChatStore } from "@/stores/chat.store";
 import { queryClient } from "@/providers/QueryClientProvider";
@@ -132,6 +130,7 @@ function SidebarNav({
 
 export default function Layout({ children }: { children: any }) {
   const nav = useNavigate();
+  const location = useLocation();
 
   const [q, setQ] = useState("");
   const [mobileNavOpen, setMobileNavOpen] = useState(false);
@@ -143,13 +142,29 @@ export default function Layout({ children }: { children: any }) {
   const notificationIds = useRef<Set<string>>(new Set());
 
   const [notificationOpen, setNotificationOpen] = useState(false);
+  const [notificationToast, setNotificationToast] = useState<NotificationItem | null>(null);
   const [chatHighlight, setChatHighlight] = useState(false);
+  const [pageSkeleton, setPageSkeleton] = useState(true);
 
-  const [browserPermission, setBrowserPermission] = useState<string>(
-    typeof Notification === "undefined"
-      ? "unsupported"
-      : Notification.permission,
-  );
+  useEffect(() => {
+    setPageSkeleton(true);
+    const timer = window.setTimeout(() => setPageSkeleton(false), 420);
+    return () => window.clearTimeout(timer);
+  }, [location.pathname]);
+
+  const skeletonVariant = useMemo(() => {
+    const path = location.pathname;
+    if (path === "/dashboard") return "dashboard" as const;
+    if (path.startsWith("/files")) return "files" as const;
+    if (path === "/users") return "users" as const;
+    if (path === "/settings") return "settings" as const;
+    if (path.startsWith("/chat")) return "chat" as const;
+    if (path === "/scan-documents") return "scanner" as const;
+    if (path === "/fax-documents") return "fax" as const;
+    if (path === "/ai") return "ai" as const;
+    if (path === "/super-admin") return "super" as const;
+    return "table" as const;
+  }, [location.pathname]);
 
   function logout() {
     disconnectSocket();
@@ -160,12 +175,6 @@ export default function Layout({ children }: { children: any }) {
     nav("/login");
   }
 
-  const [toast, setToast] = useState<NotificationItem | null>(null);
-
-  const [systemToast, setSystemToast] = useState<{
-    type: "success" | "error" | "info";
-    message: string;
-  } | null>(null);
 
   useEffect(() => {
     if (isSuper) return;
@@ -192,34 +201,6 @@ export default function Layout({ children }: { children: any }) {
   }, [isSuper]);
 
   useEffect(() => {
-    const onAlert = (event: Event) => {
-      try {
-        const detail = (event as CustomEvent).detail as {
-          type: "success" | "error" | "info";
-          message: string;
-        };
-
-        if (!detail?.message) return;
-
-        setSystemToast(detail);
-
-        window.setTimeout(
-          () =>
-            setSystemToast((current) =>
-              current?.message === detail.message ? null : current,
-            ),
-          5000,
-        );
-      } catch {}
-    };
-
-    window.addEventListener("sf:alert", onAlert as EventListener);
-
-    return () =>
-      window.removeEventListener("sf:alert", onAlert as EventListener);
-  }, []);
-
-  useEffect(() => {
     const onChatEvent = () => setChatHighlight(true);
     const onChatOpen = () => setChatHighlight(false);
     window.addEventListener("sf:chat-event", onChatEvent);
@@ -233,11 +214,17 @@ export default function Layout({ children }: { children: any }) {
   useEffect(() => {
     if (isSuper || !token()) return;
 
+    const socket = connectSocket(token());
+
     const pushNotification = (item: NotificationItem) => {
-      if (item.readAt) return;
+      if (!item?.id || item.readAt) return;
+      if (notificationIds.current.has(item.id)) return;
       notificationIds.current.add(item.id);
-      if (/message|email|chat/i.test(`${item.title} ${item.body}`))
+
+      if (/message|email|chat/i.test(`${item.title} ${item.body}`)) {
         setChatHighlight(true);
+      }
+
       try {
         window.dispatchEvent(
           new CustomEvent("sf:notification", { detail: JSON.stringify(item) }),
@@ -247,85 +234,41 @@ export default function Layout({ children }: { children: any }) {
       setNotifications((prev) =>
         [item, ...prev.filter((x) => x.id !== item.id)].slice(0, 100),
       );
+      setNotificationToast(item);
+      window.setTimeout(() => {
+        setNotificationToast((current) => current?.id === item.id ? null : current);
+      }, 5000);
 
-      setToast(item);
-
-      if (
-        typeof Notification !== "undefined" &&
-        Notification.permission === "granted"
-      ) {
-        try {
-          new Notification(item.title, {
-            body: item.body,
-            icon: "/favicon.svg",
-          });
-        } catch {}
-      }
-
-      window.setTimeout(
-        () => setToast((current) => (current?.id === item.id ? null : current)),
-        6000,
-      );
     };
 
-    const source = new EventSource(
-      `${API}/realtime?token=${encodeURIComponent(token())}`,
-    );
-
-    source.onerror = () => {};
-
-    const onNotification = (event: Event) => {
-      try {
-        pushNotification(
-          JSON.parse((event as MessageEvent).data) as NotificationItem,
-        );
-      } catch {}
+    const onNew = (item: NotificationItem) => pushNotification(item);
+    const onSync = (items: NotificationItem[]) => {
+      const unread = Array.isArray(items) ? items.filter((item) => !item.readAt) : [];
+      notificationIds.current = new Set(unread.map((item) => item.id));
+      setNotifications(unread.slice(0, 100));
     };
-
-    const onNotificationSync = (event: Event) => {
-      try {
-        const items = JSON.parse(
-          (event as MessageEvent).data,
-        ) as NotificationItem[];
-        const unread = Array.isArray(items)
-          ? items.filter((item) => !item.readAt)
-          : [];
-        notificationIds.current = new Set(unread.map((item) => item.id));
-        setNotifications(unread.slice().reverse().slice(0, 100));
-      } catch {}
+    const onRead = (payload: { id?: string }) => {
+      const id = String(payload?.id || "");
+      if (!id) return;
+      setNotifications((prev) => prev.filter((n) => n.id !== id));
+      notificationIds.current.delete(id);
     };
-
-    source.addEventListener("notification", onNotification);
-    source.addEventListener("notification-sync", onNotificationSync);
-
-    const onNotificationRead = (event: Event) => {
-      try {
-        const id = String(
-          (JSON.parse((event as MessageEvent).data) as { id?: string })?.id ||
-            "",
-        );
-        if (!id) return;
-        setNotifications((prev) => prev.filter((n) => n.id !== id));
-      } catch {}
-    };
-
-    const onNotificationsReadAll = () => {
+    const onReadAll = () => {
       setNotifications([]);
-      setToast(null);
+      notificationIds.current.clear();
+      setNotificationToast(null);
     };
 
-    source.addEventListener("notification-read", onNotificationRead);
-    source.addEventListener("notifications-read-all", onNotificationsReadAll);
+    socket.on("notification:new", onNew);
+    socket.on("notification:sync", onSync);
+    socket.on("notification:read", onRead);
+    socket.on("notifications:read-all", onReadAll);
 
     return () => {
-      source.removeEventListener("notification", onNotification);
-      source.removeEventListener("notification-sync", onNotificationSync);
-      source.removeEventListener("notification-read", onNotificationRead);
-      source.removeEventListener(
-        "notifications-read-all",
-        onNotificationsReadAll,
-      );
-      source.close();
+      socket.off("notification:new", onNew);
+      socket.off("notification:sync", onSync);
+      socket.off("notification:read", onRead);
+      socket.off("notifications:read-all", onReadAll);
     };
   }, [isSuper]);
 
@@ -340,6 +283,7 @@ export default function Layout({ children }: { children: any }) {
       .then((me: any) => {
         if (!me) return;
         if (me.email) localStorage.setItem("sf_email", me.email);
+        if (me.uniqueName) localStorage.setItem("sf_name", me.uniqueName);
         if (me.role) localStorage.setItem("sf_role", me.role);
         localStorage.setItem("sf_sidebar_items", JSON.stringify(me.sidebarItems || ["files"]));
       })
@@ -362,20 +306,6 @@ export default function Layout({ children }: { children: any }) {
           return !feature || !!addons[feature];
         });
 
-  async function enableBrowserAlerts() {
-    if (typeof Notification === "undefined") {
-      setBrowserPermission("unsupported");
-      return;
-    }
-
-    try {
-      const permission = await Notification.requestPermission();
-      setBrowserPermission(permission);
-    } catch {
-      setBrowserPermission("denied");
-    }
-  }
-
   async function markRead(id: string) {
     try {
       await api(`/workspace/notifications/${id}/read`, {
@@ -393,13 +323,13 @@ export default function Layout({ children }: { children: any }) {
       });
 
       setNotifications([]);
-      setToast(null);
     } catch {}
   }
 
-  const email = localStorage.getItem("sf_email") || "User";
+  const email = localStorage.getItem("sf_email") || "";
+  const displayName = localStorage.getItem("sf_name") || email || "User";
   const planLabel = PLAN_NAMES[localStorage.getItem("sf_plan") || ""] || "";
-  const initial = email.trim().charAt(0).toUpperCase() || "U";
+  const initial = displayName.trim().charAt(0).toUpperCase() || "U";
 
   const sidebarBody = (
     <>
@@ -490,8 +420,8 @@ export default function Layout({ children }: { children: any }) {
                 )}
 
                 {notificationOpen && (
-                  <div className="absolute right-0 top-12 z-50 w-[min(390px,calc(100vw-30px))] overflow-hidden rounded-xl border border-border bg-card shadow-lg">
-                    <div className="flex items-center justify-between border-b border-border px-4 py-3">
+                  <div className="sf-notification-popover absolute right-0 top-12 z-50 overflow-hidden rounded-2xl border border-border bg-card">
+                    <div className="sf-notification-head flex items-center justify-between border-b border-border px-4 py-3">
                       <div>
                         <p className="text-sm font-semibold">Notifications</p>
                         <p className="text-[11px] text-muted-foreground">
@@ -501,16 +431,6 @@ export default function Layout({ children }: { children: any }) {
                         </p>
                       </div>
                       <div className="flex gap-1">
-                        {browserPermission === "default" && (
-                          <Button
-                            variant="outline"
-                            size="icon-sm"
-                            title="Enable browser alerts"
-                            onClick={enableBrowserAlerts}
-                          >
-                            <Bell size={15} />
-                          </Button>
-                        )}
                         {unreadCount > 0 && (
                           <Button
                             variant="outline"
@@ -531,11 +451,11 @@ export default function Layout({ children }: { children: any }) {
                         </Button>
                       </div>
                     </div>
-                    <ScrollArea className="h-[420px]">
+                    <ScrollArea className="sf-notification-list h-[360px]">
                       {notifications.map((n) => (
                         <button
                           key={n.id}
-                          className="grid w-full grid-cols-[8px_1fr] gap-2.5 border-b border-border px-4 py-3 text-left transition-colors hover:bg-muted"
+                          className="sf-notification-item grid w-full grid-cols-[8px_1fr] gap-2.5 border-b border-border px-4 py-3 text-left transition-colors hover:bg-muted"
                           onClick={() => {
                             if (!n.readAt) markRead(n.id);
                           }}
@@ -575,9 +495,12 @@ export default function Layout({ children }: { children: any }) {
               </Avatar>
               <div className="hidden min-w-0 flex-col items-end leading-tight sm:flex">
                 <span className="max-w-[180px] truncate text-[13px] font-semibold">
-                  {email}
+                  {displayName}
                 </span>
-                {!isSuper && planLabel ? (
+                <span className="mt-0.5 text-[10px] font-semibold uppercase tracking-wider text-muted-foreground">
+                  {isSuper ? "Super Admin" : role === "COMPANY_ADMIN" ? "Company Admin" : role === "EMPLOYEE" ? "Employee" : role === "CLIENT" ? "Client" : "User"}
+                </span>
+                {!isSuper && role === "COMPANY_ADMIN" && planLabel ? (
                   <span className="mt-0.5 text-[10px] font-semibold uppercase tracking-wider text-muted-foreground">
                     {planLabel}
                   </span>
@@ -588,64 +511,26 @@ export default function Layout({ children }: { children: any }) {
         </header>
 
         <section className="mx-auto w-full max-w-[1400px] flex-1 px-3 py-6 sm:px-6 sm:py-7">
-          {children}
+          {pageSkeleton ? <PageSkeleton variant={skeletonVariant} /> : children}
         </section>
       </div>
 
-      {systemToast && (
-        <div
-          className={cn(
-            "fixed bottom-5 right-5 z-[70] flex max-w-sm items-start gap-3 rounded-xl border border-border bg-card px-4 py-3 shadow-lg",
-            systemToast.type === "success" && "border-l-4 border-l-primary",
-            systemToast.type === "error" && "border-l-4 border-l-destructive",
-            systemToast.type === "info" && "border-l-4 border-l-primary",
-          )}
-          role="status"
-        >
-          <span
-            className={cn(
-              "mt-0.5",
-              systemToast.type === "error"
-                ? "text-destructive"
-                : "text-primary",
-            )}
-          >
-            {systemToast.type === "success" ? (
-              <CheckCircle2 size={18} />
-            ) : systemToast.type === "error" ? (
-              <AlertCircle size={18} />
-            ) : (
-              <Info size={18} />
-            )}
-          </span>
-          <span className="flex-1 text-sm">{systemToast.message}</span>
-          <Button
-            variant="ghost"
-            size="icon-sm"
-            aria-label="Dismiss"
-            onClick={() => setSystemToast(null)}
-          >
-            <X size={16} />
-          </Button>
-        </div>
-      )}
-
-      {toast && !isSuper && (
+      {notificationToast && !isSuper && (
         <button
-          className="fixed bottom-5 right-5 z-[60] flex max-w-sm items-start gap-3 rounded-xl border border-border bg-card px-4 py-3 text-left shadow-lg"
+          type="button"
+          className="sf-notification-toast fixed bottom-5 right-5 z-[70] flex max-w-[360px] items-start gap-3 rounded-2xl border border-border bg-card p-3.5 text-left shadow-xl"
           onClick={() => {
             setNotificationOpen(true);
-            setToast(null);
-            if (!toast.readAt) markRead(toast.id);
+            setNotificationToast(null);
+            if (!notificationToast.readAt) markRead(notificationToast.id);
           }}
         >
+          <span className="sf-notification-toast-dot mt-1.5 shrink-0" />
           <span className="min-w-0 flex-1">
-            <b className="block text-sm">{toast.title}</b>
-            <small className="mt-0.5 block text-xs text-muted-foreground">
-              {toast.body}
-            </small>
+            <b className="block truncate text-sm text-foreground">{notificationToast.title}</b>
+            <span className="mt-0.5 block line-clamp-2 text-xs leading-5 text-muted-foreground">{notificationToast.body}</span>
           </span>
-          <X size={16} className="mt-0.5 shrink-0 text-muted-foreground" />
+          <X size={15} className="mt-0.5 shrink-0 text-muted-foreground" />
         </button>
       )}
     </div>

@@ -433,12 +433,6 @@ export default function Files() {
           {error}
         </div>
       )}
-      {notice && (
-        <div className="success" style={{ marginBottom: 16 }}>
-          {notice}
-        </div>
-      )}
-
       <div className="files-layout">
         <FolderSidebar
           folders={folders}

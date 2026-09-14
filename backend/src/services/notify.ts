@@ -1,5 +1,5 @@
 import { db } from '../db';
-import { emitToUser } from './realtime';
+import { emitNotificationToUser } from '../sockets/socket.server';
 import { sendUserEmail, emailTemplate } from './email';
 import { NotificationType, Prisma } from '@prisma/client';
 
@@ -33,9 +33,8 @@ export async function notify(
     },
   });
 
-  // Instant delivery to connected clients. DB polling in realtime.ts covers
-  // multi-instance/serverless deployments where the in-memory map is different.
-  emitToUser(userId, 'notification', notification);
+  // Instant delivery through the single Socket.IO notification channel.
+  emitNotificationToUser(userId, 'notification:new', notification);
 
   if (email) await emailNotification(userId, title, body);
   return notification;

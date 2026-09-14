@@ -41,6 +41,8 @@ export const SOCKET_EVENTS = {
   NOTIFICATION: {
     NEW: "notification:new",
     READ: "notification:read",
+    READ_ALL: "notifications:read-all",
+    SYNC: "notification:sync",
   },
 } as const;
 
@@ -61,6 +63,12 @@ export interface TypingPayload {
   conversationId: string;
 }
 
+let socketIO: Server | null = null;
+
+export function emitNotificationToUser(userId: string, event: string, payload: unknown) {
+  socketIO?.to(`user:${userId}`).emit(event, payload);
+}
+
 export interface SocketCallback<T = unknown> {
   (response: T): void;
 }
@@ -76,6 +84,7 @@ export class SocketServer {
 
   constructor(io: Server) {
     this.io = io;
+    socketIO = io;
   }
 
   initialize(): void {
@@ -160,22 +169,31 @@ export class SocketServer {
   }
 
   private registerConnection(): void {
-    this.io.on("connection", (socket) => {
+    this.io.on("connection", async (socket) => {
       const user = this.getSocketUser(socket);
 
       console.log(`[Socket.IO] Connected: ${user.id}`);
 
-      /**
-       * Every authenticated user gets a
-       * private user room.
-       *
-       * Notifications will use this later.
-       */
+      /** Every authenticated user gets a private user room. */
       if (user.companyId) {
         socket.join(this.getCompanyRoom(user.companyId));
       }
 
       socket.join(this.getUserRoom(user.id));
+
+      // Notification center uses Socket.IO only. Send the current unread
+      // snapshot once when a socket connects/reconnects; live changes are
+      // pushed through notification:new/read/read-all events.
+      try {
+        const unreadNotifications = await db.notification.findMany({
+          where: { userId: user.id, readAt: null },
+          orderBy: { createdAt: "desc" },
+          take: 100,
+        });
+        socket.emit(SOCKET_EVENTS.NOTIFICATION.SYNC, unreadNotifications);
+      } catch (error) {
+        console.error("[Socket.IO] Notification sync failed:", error);
+      }
 
       // Tell the new client which company users are currently online.
       const onlineUserIds = [...this.io.sockets.sockets.values()]

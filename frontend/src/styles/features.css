@@ -2364,3 +2364,121 @@ select option { padding:10px; background:#fff; color:#1d2939; }
 .files-folder-name-field input {
   font-weight: 400;
 }
+
+
+/* SecureFile workspace polish — fixed utility panels + single Socket.IO notification center */
+.folder-sidebar {
+  position: sticky !important;
+  top: 82px !important;
+  align-self: flex-start !important;
+  height: min(720px, calc(100vh - 102px)) !important;
+  max-height: calc(100vh - 102px) !important;
+  min-height: 0 !important;
+  overflow: hidden !important;
+}
+.folder-sidebar-head {
+  position: sticky !important;
+  top: 0 !important;
+  z-index: 8 !important;
+  flex: 0 0 auto !important;
+  background: var(--card) !important;
+}
+.folder-sidebar > .folder-tree-row.root {
+  flex: 0 0 auto !important;
+}
+.folder-sidebar > .folder-tree {
+  min-height: 0 !important;
+  flex: 1 1 auto !important;
+  overflow-y: auto !important;
+  overflow-x: hidden !important;
+  scrollbar-width: thin;
+}
+
+.settings-tabs {
+  position: sticky !important;
+  top: 82px !important;
+  align-self: flex-start !important;
+  z-index: 6;
+}
+.settings-tabs nav { gap: 4px !important; }
+.settings-tabs button {
+  min-height: 42px;
+  border-radius: 10px !important;
+}
+
+/* Compact notification center: one Socket.IO-driven in-app system. */
+.sf-notification-popover {
+  width: min(350px, calc(100vw - 24px));
+  box-shadow: 0 20px 55px rgba(16,24,40,.18), 0 3px 12px rgba(16,24,40,.08);
+  animation: sfNotificationIn .16s ease-out;
+}
+.sf-notification-head {
+  min-height: 58px;
+  background: linear-gradient(180deg,#fff,#fbfcfd);
+}
+.sf-notification-list {
+  max-height: min(360px, calc(100vh - 150px));
+}
+.sf-notification-item {
+  min-height: 72px;
+  padding: 11px 14px !important;
+  gap: 9px !important;
+}
+.sf-notification-item:hover { background: #f8fafc !important; }
+.sf-notification-item b { font-size: 12px !important; line-height: 1.35; }
+.sf-notification-item small { font-size: 11px !important; line-height: 1.45; }
+.sf-notification-item time { font-size: 9px !important; }
+.sf-notification-item > span:first-child {
+  width: 7px;
+  height: 7px;
+  margin-top: 5px;
+  border-radius: 999px;
+  box-shadow: 0 0 0 3px rgba(247,127,0,.10);
+}
+.sf-notification-toast {
+  border-left: 3px solid var(--sf-orange, #f77f00) !important;
+  animation: sfNotificationToastIn .2s ease-out;
+}
+.sf-notification-toast-dot {
+  width: 8px;
+  height: 8px;
+  border-radius: 999px;
+  background: #f77f00;
+  box-shadow: 0 0 0 4px rgba(247,127,0,.10);
+}
+@keyframes sfNotificationIn {
+  from { opacity: 0; transform: translateY(-5px) scale(.985); }
+  to { opacity: 1; transform: translateY(0) scale(1); }
+}
+@keyframes sfNotificationToastIn {
+  from { opacity: 0; transform: translateY(10px); }
+  to { opacity: 1; transform: translateY(0); }
+}
+
+@media (max-width: 900px) {
+  .folder-sidebar { position: relative !important; top: auto !important; height: 430px !important; max-height: 430px !important; }
+  .settings-tabs { position: relative !important; top: auto !important; }
+}
+@media (max-width: 600px) {
+  .sf-notification-popover { width: min(340px, calc(100vw - 18px)); right: -6px; }
+  .sf-notification-toast { right: 12px !important; bottom: 12px !important; max-width: calc(100vw - 24px) !important; }
+}
+
+/* Page-specific loading skeletons */
+.sf-skeleton {
+  position: relative;
+  overflow: hidden;
+  background: #edf0f4;
+}
+.sf-skeleton::after {
+  content: "";
+  position: absolute;
+  inset: 0;
+  transform: translateX(-100%);
+  background: linear-gradient(90deg, transparent, rgba(255,255,255,.72), transparent);
+  animation: sf-skeleton-shimmer 1.35s ease-in-out infinite;
+}
+@keyframes sf-skeleton-shimmer { 100% { transform: translateX(100%); } }
+@media (prefers-reduced-motion: reduce) {
+  .sf-skeleton::after { animation: none; }
+}

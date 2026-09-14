@@ -2,7 +2,6 @@ import { Router } from "express";
 import rateLimit from "express-rate-limit";
 
 import { env } from "../config/env";
-import { realtimeEvents } from "../services/realtime";
 import { subscriptionSweep } from "../services/subscriptionWorker";
 import { emailConfigured } from "../services/email";
 import { faxConfigured } from "../services/fax";
@@ -54,7 +53,6 @@ router.use("/workspace/trash", trash);
 router.use("/cron", cron);
 router.use("/fax", fax);
 
-router.get("/realtime", realtimeEvents);
 
 router.get("/maintenance/sweep", async (req, res, next) => {
   try {

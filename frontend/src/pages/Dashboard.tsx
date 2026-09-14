@@ -10,6 +10,7 @@ import {
   CardTitle,
 } from "@/components/ui/card";
 import { Progress } from "@/components/ui/progress";
+import PageSkeleton from "@/components/PageSkeleton";
 
 const USED_COLOR = "#f77f00";
 const FREE_COLOR = "#e8e8e8";
@@ -50,6 +51,8 @@ export default function Dashboard() {
         ["My folders", d?.folders || 0, Folder],
         ["Unread notifications", d?.unreadNotifications || 0, Bell],
       ];
+
+  if (!d) return <PageSkeleton variant="dashboard" />;
 
   return (
     <div className="space-y-6">
