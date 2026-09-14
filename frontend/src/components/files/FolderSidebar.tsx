@@ -152,7 +152,7 @@ function FolderTreeItem({
         </button>
 
         {actionItems.length > 0 && (
-          <FileActionsMenu items={actionItems} align="right" />
+          <FileActionsMenu items={actionItems} align="right" variant="folder" />
         )}
       </div>
 

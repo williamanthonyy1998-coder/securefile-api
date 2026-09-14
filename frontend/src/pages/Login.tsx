@@ -1,14 +1,17 @@
 import { FormEvent, useState } from "react";
+import { useSearchParams } from "react-router-dom";
 import { Link, useNavigate } from "react-router-dom";
 import { api } from "../lib/api";
 import { connectSocket } from "../services/socket";
 
 export default function Login() {
   const nav = useNavigate();
+  const [searchParams] = useSearchParams();
 
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
   const [err, setErr] = useState("");
+  const returnTo = searchParams.get("returnTo") || "";
 
   async function go(e: FormEvent) {
     e.preventDefault();
@@ -24,6 +27,7 @@ export default function Login() {
       localStorage.setItem("sf_user_id", d.user.id);
       localStorage.setItem("sf_role", d.user.role);
       localStorage.setItem("sf_addons", JSON.stringify(d.user.addons || {}));
+      localStorage.setItem("sf_sidebar_items", JSON.stringify(d.user.sidebarItems || ["files"]));
 
       if (d.user.planCode) {
         localStorage.setItem("sf_plan", d.user.planCode);
@@ -31,7 +35,7 @@ export default function Login() {
 
       connectSocket(d.token);
 
-      nav(d.user.role === "SUPER_ADMIN" ? "/super-admin" : "/dashboard");
+      nav(returnTo && returnTo.startsWith("/") ? returnTo : (d.user.role === "SUPER_ADMIN" ? "/super-admin" : "/dashboard"));
     } catch (e: any) {
       setErr(e.message);
     }

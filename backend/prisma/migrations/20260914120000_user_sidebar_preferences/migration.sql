@@ -1,0 +1,1 @@
+ALTER TABLE "User" ADD COLUMN "sidebarItems" TEXT[] NOT NULL DEFAULT ARRAY['files']::TEXT[];

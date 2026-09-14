@@ -10,12 +10,18 @@ import { hashToken, randomToken } from "../utils/security";
 import { sendUserEmail } from "./email";
 import { notify, notifyCompanyUsers } from "./notify";
 
+const SIDEBAR_ITEMS = [
+  "dashboard", "files", "shared", "trash", "requests", "approvals",
+  "task-management", "chat", "scan-documents", "fax-documents", "ai", "settings",
+] as const;
+
 const createUserSchema = z.object({
   email: z.string().trim().email("Enter a valid email address").max(320),
   name: z.string().trim().min(2, "Name is required").max(120),
   role: z.enum(["EMPLOYEE", "CLIENT"]).default("EMPLOYEE"),
   folderIds: z.array(z.string()).optional().default([]),
   personalFolderAllowed: z.boolean().default(true),
+  sidebarItems: z.array(z.enum(SIDEBAR_ITEMS)).default(["files"]),
 });
 
 function escapeHtml(value: string) {
@@ -58,11 +64,24 @@ class UserService {
         status: true,
         emailVerifiedAt: true,
         personalFolderAllowed: true,
+        sidebarItems: true,
         createdAt: true,
         _count: { select: { ownedFiles: true, ownedFolders: true } },
       },
       orderBy: { createdAt: "desc" },
     });
+  }
+
+  async getCurrentUser(userId: string) {
+    const u = await this.db.user.findUnique({
+      where: { id: userId },
+      select: {
+        id: true, email: true, uniqueName: true, role: true, companyId: true,
+        status: true, personalFolderAllowed: true, sidebarItems: true,
+      },
+    });
+    if (!u) throw new AppError("User not found", 404);
+    return { ...u, sidebarItems: u.sidebarItems?.length ? u.sidebarItems : ["files"] };
   }
 
   async listChatUsers(userId: string) {
@@ -169,6 +188,7 @@ class UserService {
       role: userRole,
       folderIds,
       personalFolderAllowed,
+      sidebarItems,
     } = input.data;
 
     const sub = await this.db.subscription.findUnique({ where: { companyId } });
@@ -199,6 +219,7 @@ class UserService {
         status: "INVITED",
         emailVerifiedAt: new Date(),
         personalFolderAllowed,
+        sidebarItems,
       },
     });
 
@@ -366,8 +387,9 @@ class UserService {
             canView: item.canView !== false,
             canDownload: item.canDownload !== false,
             canUpload: Boolean(item.canUpload),
-            canEdit: Boolean(item.canEdit),
-            canDelete: Boolean(item.canDelete),
+            // Shared folders are never editable/deletable by recipients.
+            canEdit: false,
+            canDelete: false,
             canShare: Boolean(item.canShare),
           },
         });
@@ -379,56 +401,145 @@ class UserService {
 
   async updateUser(
     companyId: string,
+    actorId: string,
     userId: string,
-    body: { name?: unknown; role?: unknown },
+    body: {
+      name?: unknown;
+      email?: unknown;
+      role?: unknown;
+      personalFolderAllowed?: unknown;
+      sidebarItems?: unknown;
+      folders?: unknown;
+    },
   ) {
     const user = await this.db.user.findFirst({
       where: this.companyUserWhere(companyId, userId),
     });
-    if (!user) {
-      throw new AppError("User not found", 404);
-    }
+    if (!user) throw new AppError("User not found", 404);
 
     const data: Prisma.UserUpdateInput = {};
-    if (body.name !== undefined) data.uniqueName = String(body.name).trim();
-    if (
-      body.role !== undefined &&
-      ["EMPLOYEE", "CLIENT"].includes(String(body.role))
-    ) {
-      data.role = body.role as Role;
-    }
-    data.personalFolderAllowed = true;
+    const nextName = body.name === undefined ? user.uniqueName : String(body.name).trim();
+    if (!nextName) throw new AppError("Name is required", 400);
+    data.uniqueName = nextName;
 
-    const updated = await this.db.user.update({
-      where: { id: user.id },
-      data,
+    let nextEmail = user.email;
+    if (body.email !== undefined) {
+      nextEmail = String(body.email).trim().toLowerCase();
+      if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(nextEmail)) {
+        throw new AppError("Enter a valid email address", 400);
+      }
+      if (nextEmail !== user.email) {
+        const existing = await this.db.user.findUnique({ where: { email: nextEmail } });
+        if (existing && existing.id !== user.id) throw new AppError("Email already exists", 409);
+        data.email = nextEmail;
+      }
+    }
+
+    if (body.role !== undefined) {
+      if (!["EMPLOYEE", "CLIENT"].includes(String(body.role))) {
+        throw new AppError("Role must be Employee or Client", 400);
+      }
+      data.role = String(body.role) as Role;
+    }
+
+    const personalFolderAllowed =
+      body.personalFolderAllowed === undefined
+        ? user.personalFolderAllowed
+        : Boolean(body.personalFolderAllowed);
+    data.personalFolderAllowed = personalFolderAllowed;
+
+    const sidebarItems = Array.isArray(body.sidebarItems)
+      ? [...new Set(body.sidebarItems.map(String))].filter((x): x is (typeof SIDEBAR_ITEMS)[number] =>
+          (SIDEBAR_ITEMS as readonly string[]).includes(x),
+        )
+      : (user.sidebarItems?.length ? user.sidebarItems : ["files"]);
+    data.sidebarItems = sidebarItems;
+
+    const requestedFolders = Array.isArray(body.folders) ? body.folders : null;
+    const folderPermissions = requestedFolders
+      ? requestedFolders
+      : null;
+
+    const updated = await this.db.$transaction(async (tx) => {
+      const result = await tx.user.update({ where: { id: user.id }, data });
+
+      if (personalFolderAllowed) {
+        const existing = await tx.folder.findFirst({
+          where: { companyId, ownerId: user.id, isPersonal: true },
+        });
+        if (!existing) {
+          await tx.folder.create({
+            data: { companyId, ownerId: user.id, name: "Personal Folder", isPersonal: true },
+          });
+        }
+      }
+
+      if (folderPermissions) {
+        await tx.share.deleteMany({
+          where: { companyId, recipientId: user.id, folderId: { not: null } },
+        });
+
+        for (const item of folderPermissions) {
+          if (!item || !item.folderId) continue;
+          const folder = await tx.folder.findFirst({
+            where: { id: String(item.folderId), companyId, deletedAt: null, isPersonal: false },
+          });
+          if (!folder) continue;
+          await tx.share.create({
+            data: {
+              companyId, folderId: folder.id, ownerId: actorId, recipientId: user.id,
+              canView: item.canView !== false,
+              canDownload: item.canDownload !== false,
+              canUpload: Boolean(item.canUpload),
+              canEdit: Boolean(item.canEdit),
+              canDelete: Boolean(item.canDelete),
+              canShare: Boolean(item.canShare),
+            },
+          });
+        }
+      }
+
+      return result;
     });
 
-    if (data.personalFolderAllowed === true) {
-      const existing = await this.db.folder.findFirst({
-        where: {
-          companyId: user.companyId!,
-          ownerId: user.id,
-          isPersonal: true,
-        },
+    const emailChanged = nextEmail !== user.email;
+    if (emailChanged && user.status === "INVITED") {
+      const temporaryPassword = generateTemporaryPassword();
+      const bcrypt = (await import("bcryptjs")).default;
+      await this.db.user.update({
+        where: { id: user.id },
+        data: { passwordHash: await bcrypt.hash(temporaryPassword, 12) },
       });
-      if (!existing) {
-        await this.db.folder.create({
-          data: {
-            companyId: user.companyId!,
-            ownerId: user.id,
-            name: "Personal Folder",
-            isPersonal: true,
-          },
-        });
+      await this.db.verificationToken.updateMany({
+        where: { userId: user.id, usedAt: null, type: { in: ["INVITATION", "PASSWORD_RESET"] } },
+        data: { usedAt: new Date() },
+      });
+      const invitationToken = randomToken();
+      const resetToken = randomToken();
+      await this.db.verificationToken.create({
+        data: { userId: user.id, tokenHash: hashToken(invitationToken), type: "INVITATION", expiresAt: new Date(Date.now() + 24 * 60 * 60 * 1000) },
+      });
+      await this.db.verificationToken.create({
+        data: { userId: user.id, tokenHash: hashToken(resetToken), type: "PASSWORD_RESET", expiresAt: new Date(Date.now() + 24 * 60 * 60 * 1000) },
+      });
+      const invitationUrl = `${env.APP_URL}/accept-invitation?token=${encodeURIComponent(invitationToken)}`;
+      const resetUrl = `${env.APP_URL}/reset-password?token=${encodeURIComponent(resetToken)}`;
+      try {
+        await sendUserEmail(
+          nextEmail,
+          "Your SecureFile account details were updated",
+          `<p>Hello <strong>${escapeHtml(nextName)}</strong>,</p><p>Your SecureFile invitation email has been updated.</p><p><strong>Email:</strong> ${escapeHtml(nextEmail)}<br/><strong>Temporary password:</strong> ${escapeHtml(temporaryPassword)}</p><p><a href="${invitationUrl}">Activate account and set a new password</a></p><p><a href="${resetUrl}">Reset / change your password</a></p><p>These links expire in 24 hours.</p>`,
+        );
+      } catch (mailError) {
+        console.error("USER_EMAIL_CHANGE_INVITATION_ERROR:", mailError);
       }
     }
 
     await notify(
       user.id,
       "Account updated",
-      "Your SecureFile account details or role were updated by your Company Admin.",
-      user.companyId!,
+      "Your SecureFile account details, folder access, or sidebar access were updated by your Company Admin.",
+      companyId,
       "USER_ACTIVATED",
       true,
       { entityId: user.id },

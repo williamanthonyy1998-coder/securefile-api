@@ -19,6 +19,18 @@ export async function listUsers(
   }
 }
 
+export async function getCurrentUser(
+  req: AuthedRequest,
+  res: Response,
+  next: NextFunction,
+) {
+  try {
+    return res.json(await userService.getCurrentUser(req.user!.id));
+  } catch (error) {
+    next(error);
+  }
+}
+
 export async function listChatUsers(
   req: AuthedRequest,
   res: Response,
@@ -107,6 +119,7 @@ export async function updateUser(
   try {
     const updated = await userService.updateUser(
       req.user!.companyId!,
+      req.user!.id,
       String(req.params.id),
       req.body || {},
     );

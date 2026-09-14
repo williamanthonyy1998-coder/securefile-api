@@ -10,6 +10,7 @@ import {
   CardHeader,
   CardTitle,
 } from "@/components/ui/card";
+import { sfConfirm } from "../../lib/dialogs";
 import { Input } from "@/components/ui/input";
 import { Separator } from "@/components/ui/separator";
 
@@ -155,12 +156,7 @@ export default function SettingsPanel({ tab }: SettingsPanelProps) {
   }
 
   async function cancel() {
-    if (
-      !confirm(
-        "Cancel this SecureFile subscription now? Your workspace and data will be preserved, but all normal work will be suspended immediately. You can renew from Settings at any time.",
-      )
-    )
-      return;
+    if (!(await sfConfirm("Cancel this SecureFile subscription now? Your workspace and data will be preserved, but normal work will be suspended immediately.", { title: "Cancel subscription", danger: true, confirmLabel: "Cancel subscription" }))) return;
     try {
       setBusy(true);
       setErr("");

@@ -1,6 +1,7 @@
 import { useNavigate } from "react-router-dom";
 import { Download, Eye, Trash2 } from "lucide-react";
 import { api, downloadPrivateFile } from "../../lib/api";
+import { sfConfirm } from "../../lib/dialogs";
 import FileActionsMenu, {
   type FileActionItem,
 } from "../files/FileActionsMenu";
@@ -23,10 +24,7 @@ export default function SharedPanel({ data, refresh, setErr }: any) {
   }
 
   async function remove(id: string) {
-    if (
-      !confirm("Remove this share? The recipient will immediately lose access.")
-    )
-      return;
+    if (!(await sfConfirm("Remove this share? The recipient will immediately lose access.", { title: "Remove share", danger: true, confirmLabel: "Remove share" }))) return;
     try {
       await api(`/sharing/${id}`, { method: "DELETE" });
       refresh();

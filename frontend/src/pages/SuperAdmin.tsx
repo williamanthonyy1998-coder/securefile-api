@@ -11,6 +11,7 @@ import {
   ExternalLink,
   Check,
 } from "lucide-react";
+import { sfConfirm } from "../lib/dialogs";
 import { api } from "../lib/api";
 
 type Company = {
@@ -308,12 +309,7 @@ export default function SuperAdmin() {
   }
 
   async function remove(c: Company) {
-    if (
-      !confirm(
-        `Delete ${c.name}? This permanently removes the company and its data.`,
-      )
-    )
-      return;
+    if (!(await sfConfirm(`Delete ${c.name}? This permanently removes the company and its data.`, { title: "Delete company", danger: true, confirmLabel: "Delete company" }))) return;
     setError("");
     try {
       await api(`/super-admin/companies/${c.id}`, { method: "DELETE" });

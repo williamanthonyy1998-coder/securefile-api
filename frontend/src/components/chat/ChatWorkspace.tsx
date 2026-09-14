@@ -17,6 +17,7 @@ import {
   useUnreadConversations,
   useUpdateConversation,
 } from "../../api/chat.api";
+import { sfAlert, sfConfirm, sfPrompt } from "../../lib/dialogs";
 import ChatSidebar from "./ChatSidebar";
 import ChatConversationPane from "./ChatConversationPane";
 import ChatMailPane from "./ChatMailPane";
@@ -158,7 +159,7 @@ export default function ChatWorkspace() {
       const result = await createDirect.mutateAsync({ userId });
       openConversation(result.conversation.id, "chat");
     } catch (error) {
-      alert(chatErrorMessage(error, "Unable to start chat"));
+      await sfAlert(chatErrorMessage(error, "Unable to start chat"), { title: "Unable to start chat", tone: "error" });
     }
   }
 
@@ -185,7 +186,7 @@ export default function ChatWorkspace() {
       setBody("");
       emitStopTyping(conversationId);
     } catch (error) {
-      alert(chatErrorMessage(error, "Unable to send message"));
+      await sfAlert(chatErrorMessage(error, "Unable to send message"), { title: "Unable to send message", tone: "error" });
     } finally {
       setSending(false);
     }
@@ -202,12 +203,12 @@ export default function ChatWorkspace() {
       setGroupUsers([]);
       openConversation(result.conversation.id, "group");
     } catch (error) {
-      alert(chatErrorMessage(error, "Unable to create group"));
+      await sfAlert(chatErrorMessage(error, "Unable to create group"), { title: "Unable to create group", tone: "error" });
     }
   }
 
   async function renameGroup(conversation: Conversation) {
-    const name = window.prompt("New group name", conversation.name || "");
+    const name = await sfPrompt("Choose a clear name for this group.", conversation.name || "", { title: "Rename group", confirmLabel: "Rename group" });
     if (!name?.trim()) return;
     try {
       await updateConversation.mutateAsync({
@@ -215,17 +216,17 @@ export default function ChatWorkspace() {
         payload: { name: name.trim() },
       });
     } catch (error) {
-      alert(chatErrorMessage(error, "Unable to rename group"));
+      await sfAlert(chatErrorMessage(error, "Unable to rename group"), { title: "Unable to rename group", tone: "error" });
     }
   }
 
   async function leaveGroup(conversation: Conversation) {
-    if (!confirm(`Leave group "${conversation.name || "Group"}"?`)) return;
+    if (!(await sfConfirm(`Leave group “${conversation.name || "Group"}”?`, { title: "Leave group", danger: true, confirmLabel: "Leave group" }))) return;
     try {
       await leaveConversation.mutateAsync(conversation.id);
       if (conversationId === conversation.id) nav("/chat");
     } catch (error) {
-      alert(chatErrorMessage(error, "Unable to leave group"));
+      await sfAlert(chatErrorMessage(error, "Unable to leave group"), { title: "Unable to leave group", tone: "error" });
     }
   }
 
@@ -254,7 +255,7 @@ export default function ChatWorkspace() {
       setMailDetail(null);
       await loadEmails();
     } catch (e: any) {
-      alert(e.message);
+      await sfAlert(e.message, { title: "Email could not be sent", tone: "error" });
     }
   }
 

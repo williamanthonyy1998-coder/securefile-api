@@ -50,6 +50,14 @@ function Private({ children }: { children: any }) {
   return <Layout>{children}</Layout>;
 }
 
+function AdminPrivate({ children }: { children: any }) {
+  const t = localStorage.getItem("sf_token");
+  const role = localStorage.getItem("sf_role");
+  if (!t) return <Navigate to="/login" replace />;
+  if (role !== "COMPANY_ADMIN") return <Navigate to="/dashboard" replace />;
+  return <Layout>{children}</Layout>;
+}
+
 function SuperPrivate({ children }: { children: any }) {
   return localStorage.getItem("sf_token") &&
     localStorage.getItem("sf_role") === "SUPER_ADMIN"
@@ -173,9 +181,9 @@ export default function App() {
       <Route
         path="/users"
         element={
-          <Private>
+          <AdminPrivate>
             <Users />
-          </Private>
+          </AdminPrivate>
         }
       />
 

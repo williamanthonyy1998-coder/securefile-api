@@ -67,6 +67,7 @@ const corsOptions: cors.CorsOptions = {
     "Authorization",
     "X-Requested-With",
     "X-Tenant-Slug",
+    "X-Share-Password",
   ],
   origin: (origin, cb) => {
     if (!origin) {
