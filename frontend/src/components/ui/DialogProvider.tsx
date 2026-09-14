@@ -53,7 +53,7 @@ export function DialogProvider({ children }: { children: ReactNode }) {
     return new Promise<boolean>((resolve) => {
       setRequest({ ...normalize(input), kind: "confirm" });
       setInputValue("");
-      setResolver(() => (value) => resolve(value === true));
+      setResolver(() => (value: boolean | string | null) => resolve(value === true));
     });
   }, []);
 
@@ -70,7 +70,9 @@ export function DialogProvider({ children }: { children: ReactNode }) {
       const normalized = normalize(input);
       setRequest({ ...normalized, kind: "prompt" });
       setInputValue(normalized.defaultValue || "");
-      setResolver(() => (value) => resolve(typeof value === "string" ? value : null));
+      setResolver(() => (value: boolean | string | null) =>
+  resolve(typeof value === "string" ? value : null)
+);
     });
   }, []);
 
