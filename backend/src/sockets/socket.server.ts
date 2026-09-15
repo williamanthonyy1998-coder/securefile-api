@@ -200,9 +200,21 @@ export class SocketServer {
         .map((s) => s.data.user as SocketUser | undefined)
         .filter((peer): peer is SocketUser => Boolean(peer?.id) && peer?.companyId === user.companyId)
         .map((peer) => peer.id);
+      const emitCompanyPresenceSnapshot = () => {
+        const currentOnlineUserIds = [...this.io.sockets.sockets.values()]
+          .map((s) => s.data.user as SocketUser | undefined)
+          .filter((peer): peer is SocketUser => Boolean(peer?.id) && peer?.companyId === user.companyId)
+          .map((peer) => peer.id);
+
+        socket.emit(SOCKET_EVENTS.CHAT.PRESENCE_SNAPSHOT, {
+          userIds: [...new Set(currentOnlineUserIds)],
+        });
+      };
+
       socket.emit(SOCKET_EVENTS.CHAT.PRESENCE_SNAPSHOT, {
         userIds: [...new Set(onlineUserIds)],
       });
+      socket.on("chat:presence_snapshot_request", emitCompanyPresenceSnapshot);
 
       if (user.companyId) {
         socket.to(this.getCompanyRoom(user.companyId)).emit(
@@ -226,6 +238,7 @@ export class SocketServer {
        */
 
       socket.on("disconnect", (reason) => {
+        socket.off("chat:presence_snapshot_request", emitCompanyPresenceSnapshot);
         console.log(`[Socket.IO] Disconnected: ${user.id} (${reason})`);
 
         // A user may have multiple tabs/devices. Only broadcast offline when

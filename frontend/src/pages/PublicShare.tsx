@@ -223,7 +223,7 @@ export default function PublicShare() {
               />
             </label>
             {err && <div className="public-share-error">{err}</div>}
-            <button className="btn public-share-primary" onClick={unlock} disabled={loading}>
+            <button className="btn public-share-primary" onClick={unlock} disabled={loading} aria-busy={loading}>
               <KeyRound size={16} /> {loading ? "Verifying access…" : "Open secure share"}
             </button>
           </section>

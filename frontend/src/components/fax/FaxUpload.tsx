@@ -187,6 +187,7 @@ export default function FaxUpload({ setErr }: any) {
               <button
                 className="btn"
                 disabled={busy || areaCode.length !== 3}
+                aria-busy={busy}
                 onClick={provision}
               >
                 {busy ? "Provisioning..." : "Get my fax number"}
@@ -274,6 +275,7 @@ export default function FaxUpload({ setErr }: any) {
               (mode === "existing" && !fileId) ||
               (mode === "upload" && !uploadFile)
             }
+            aria-busy={busy}
             onClick={send}
           >
             <Send size={15} />

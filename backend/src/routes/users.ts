@@ -4,6 +4,7 @@ import {
   acceptInvitation,
   createUser,
   getCurrentUser,
+  updateCurrentProfile,
   deleteUser,
   getUserMeta,
   getUserPermissions,
@@ -21,6 +22,7 @@ const router = Router();
 
 router.get("/", auth, role("COMPANY_ADMIN"), listUsers);
 router.get("/me", auth, getCurrentUser);
+router.patch("/me/profile", auth, updateCurrentProfile);
 router.get("/chat", auth, listChatUsers);
 router.get("/meta", auth, role("COMPANY_ADMIN"), getUserMeta);
 

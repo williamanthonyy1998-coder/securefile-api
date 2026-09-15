@@ -117,7 +117,7 @@ export default function AiChatPanel({ setErr }: any) {
             placeholder="Ask about your SecureFile workspace or anything else…"
             rows={2}
           />
-          <button className="btn" disabled={!q.trim() || busy} onClick={ask}>
+          <button className="btn" disabled={!q.trim() || busy} aria-busy={busy} onClick={ask}>
             <Send size={15} />
             {busy ? "Thinking…" : "Ask"}
           </button>

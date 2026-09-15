@@ -22,6 +22,7 @@ const createUserSchema = z.object({
   folderIds: z.array(z.string()).optional().default([]),
   personalFolderAllowed: z.boolean().default(true),
   sidebarItems: z.array(z.enum(SIDEBAR_ITEMS)).default(["files"]),
+  avatarUrl: z.string().max(4000000).optional().nullable(),
 });
 
 function escapeHtml(value: string) {
@@ -65,6 +66,8 @@ class UserService {
         emailVerifiedAt: true,
         personalFolderAllowed: true,
         sidebarItems: true,
+        avatarUrl: true,
+        twoFactorEnabled: true,
         createdAt: true,
         _count: { select: { ownedFiles: true, ownedFolders: true } },
       },
@@ -77,11 +80,25 @@ class UserService {
       where: { id: userId },
       select: {
         id: true, email: true, uniqueName: true, role: true, companyId: true,
-        status: true, personalFolderAllowed: true, sidebarItems: true,
+        status: true, personalFolderAllowed: true, sidebarItems: true, avatarUrl: true, twoFactorEnabled: true,
       },
     });
     if (!u) throw new AppError("User not found", 404);
     return { ...u, sidebarItems: u.sidebarItems?.length ? u.sidebarItems : ["files"] };
+  }
+
+  async updateCurrentProfile(userId: string, body: { name?: unknown; avatarUrl?: unknown }) {
+    const user = await this.db.user.findUnique({ where: { id: userId } });
+    if (!user) throw new AppError("User not found", 404);
+    const name = body.name === undefined ? user.uniqueName : String(body.name).trim();
+    if (!name) throw new AppError("Name is required", 400);
+    const data: Prisma.UserUpdateInput = { uniqueName: name };
+    if (body.avatarUrl !== undefined) {
+      const avatar = body.avatarUrl == null ? null : String(body.avatarUrl);
+      if (avatar && avatar.length > 4000000) throw new AppError("Profile image is too large", 400);
+      data.avatarUrl = avatar;
+    }
+    return this.db.user.update({ where: { id: user.id }, data, select: { id: true, email: true, uniqueName: true, role: true, status: true, avatarUrl: true, twoFactorEnabled: true, sidebarItems: true } });
   }
 
   async listChatUsers(userId: string) {
@@ -189,6 +206,7 @@ class UserService {
       folderIds,
       personalFolderAllowed,
       sidebarItems,
+      avatarUrl,
     } = input.data;
 
     const sub = await this.db.subscription.findUnique({ where: { companyId } });
@@ -220,6 +238,7 @@ class UserService {
         emailVerifiedAt: new Date(),
         personalFolderAllowed,
         sidebarItems,
+        avatarUrl: avatarUrl || null,
       },
     });
 
@@ -324,6 +343,8 @@ class UserService {
       name: u.uniqueName,
       role: u.role,
       status: u.status,
+      avatarUrl: u.avatarUrl || null,
+      twoFactorEnabled: u.twoFactorEnabled,
       personalFolderAllowed: u.personalFolderAllowed,
       emailDelivered,
       invitationUrl: env.NODE_ENV === "development" ? invitationUrl : undefined,
@@ -410,6 +431,7 @@ class UserService {
       personalFolderAllowed?: unknown;
       sidebarItems?: unknown;
       folders?: unknown;
+      avatarUrl?: unknown;
     },
   ) {
     const user = await this.db.user.findFirst({
@@ -454,6 +476,11 @@ class UserService {
         )
       : (user.sidebarItems?.length ? user.sidebarItems : ["files"]);
     data.sidebarItems = sidebarItems;
+    if (body.avatarUrl !== undefined) {
+      const avatar = body.avatarUrl == null ? null : String(body.avatarUrl);
+      if (avatar && avatar.length > 4000000) throw new AppError("Profile image is too large", 400);
+      data.avatarUrl = avatar;
+    }
 
     const requestedFolders = Array.isArray(body.folders) ? body.folders : null;
     const folderPermissions = requestedFolders

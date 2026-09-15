@@ -147,6 +147,14 @@ export default function Files() {
     }
   }, [previewQuery.error, selected]);
 
+  function showNotice(message: string) {
+    setNotice("");
+    if (!message) return;
+    window.dispatchEvent(new CustomEvent("sf:alert", {
+      detail: { type: "success", message },
+    }));
+  }
+
   async function upload(selectedFile?: File | null) {
     const f = selectedFile ?? ref.current?.files?.[0];
     if (!f) return;
@@ -170,7 +178,7 @@ export default function Files() {
         folderId: folderId || undefined,
         source: "UPLOAD",
       });
-      setNotice("File uploaded.");
+      showNotice("File uploaded.");
       setError("");
     } catch (e) {
       setError(filesErrorMessage(e));
@@ -191,7 +199,7 @@ export default function Files() {
         parentId: folderId || undefined,
       });
       setFolderName("");
-      setNotice("Folder created.");
+      showNotice("Folder created.");
       setError("");
     } catch (e) {
       setError(filesErrorMessage(e));
@@ -206,7 +214,7 @@ export default function Files() {
         fileId: f.id,
         payload: { name },
       });
-      setNotice("File renamed.");
+      showNotice("File renamed.");
       setError("");
     } catch (e) {
       setError(filesErrorMessage(e));
@@ -218,7 +226,7 @@ export default function Files() {
     try {
       await deleteFileMutation.mutateAsync(f.id);
       if (selected?.id === f.id) closePreview();
-      setNotice("File deleted.");
+      showNotice("File deleted.");
       setError("");
     } catch (e) {
       setError(filesErrorMessage(e));
@@ -233,7 +241,7 @@ export default function Files() {
         folderId: f.id,
         payload: { name },
       });
-      setNotice("Folder renamed.");
+      showNotice("Folder renamed.");
       setError("");
     } catch (e) {
       setError(filesErrorMessage(e));
@@ -245,7 +253,7 @@ export default function Files() {
     try {
       await deleteFolderMutation.mutateAsync(f.id);
       if (folderId === f.id) setFolderId("");
-      setNotice("Folder deleted.");
+      showNotice("Folder deleted.");
       setError("");
     } catch (e) {
       setError(filesErrorMessage(e));
@@ -329,7 +337,7 @@ export default function Files() {
           ? new Date(taskForm.dueAt).toISOString()
           : undefined,
       });
-      setNotice("Task assigned.");
+      showNotice("Task assigned.");
       setError("");
       setTaskFile(null);
     } catch (e) {
@@ -350,7 +358,7 @@ export default function Files() {
         expiresAt: shareExpiry || undefined,
       });
       setPublicToken(d.publicToken || "");
-      setNotice("Share created.");
+      showNotice("Share created.");
       setError("");
       if (shareType === "INTERNAL") {
         setShareFile(null);
@@ -381,7 +389,7 @@ export default function Files() {
           payload: { parentId: moveTarget || null },
         });
       }
-      setNotice(
+      showNotice(
         `${moveItem.type === "FILE" ? "File" : "Folder"} moved successfully.`,
       );
       setMoveItem(null);
@@ -420,6 +428,7 @@ export default function Files() {
           <button
             className="btn"
             disabled={uploading}
+            aria-busy={uploading}
             onClick={() => ref.current?.click()}
           >
             <UploadCloud size={16} />
@@ -433,6 +442,7 @@ export default function Files() {
           {error}
         </div>
       )}
+
       <div className="files-layout">
         <FolderSidebar
           folders={folders}
@@ -461,7 +471,7 @@ export default function Files() {
                   aria-label="New folder name"
                 />
               </label>
-              <button className="btn small" disabled={!folderName.trim() || createFolderMutation.isPending} onClick={createFolder}>
+              <button className="btn small" disabled={!folderName.trim() || createFolderMutation.isPending} aria-busy={createFolderMutation.isPending} onClick={createFolder}>
                 <FolderPlus size={15} /> {createFolderMutation.isPending ? "Creating…" : "Create folder"}
               </button>
             </div>
@@ -616,7 +626,7 @@ export default function Files() {
           folders={folders}
           onClose={() => setPendingUploadFile(null)}
           onSuccess={(message) => {
-            setNotice(message);
+            showNotice(message);
             setError("");
           }}
           onError={(message) => setError(message)}
@@ -686,7 +696,7 @@ export default function Files() {
               >
                 Cancel
               </button>
-              <button className="btn" disabled={moving} onClick={confirmMove}>
+              <button className="btn" disabled={moving} aria-busy={moving} onClick={confirmMove}>
                 {moving ? "Moving..." : "Move here"}
               </button>
             </div>
@@ -806,7 +816,8 @@ export default function Files() {
               </button>
               <button
                 className="btn"
-                disabled={!taskForm.assigneeId || !taskForm.title.trim()}
+                disabled={!taskForm.assigneeId || !taskForm.title.trim() || createTaskMutation.isPending}
+                aria-busy={createTaskMutation.isPending}
                 onClick={createTask}
               >
                 Assign task
@@ -868,6 +879,11 @@ export default function Files() {
               </label>
             )}
             <div className="modal-section">Permissions</div>
+            <p className="share-permission-note share-permission-rule">
+              {shareFile
+                ? "File sharing supports View, Download and Re-share only."
+                : "Folder sharing supports View, Download, Upload, Delete and Re-share. Folder editing is not available."}
+            </p>
             {shareType === "PUBLIC" && (
               <p className="share-permission-note">
                 {shareFolder
@@ -877,22 +893,19 @@ export default function Files() {
             )}
             <div className="permission-checks" style={{ paddingLeft: 0 }}>
               {(
-                (shareType === "PUBLIC"
-                  ? ([
-                      "view",
-                      "download",
-                      ...(shareFolder
-                        ? ["upload", "edit", "delete", ...(addons.reshare ? ["share"] : [])]
-                        : []),
-                    ] as Array<keyof typeof sharePerms>)
-                  : ([
-                      "view",
-                      "download",
-                      "upload",
-                      "edit",
-                      "delete",
-                      ...(addons.reshare ? ["share"] : []),
-                    ] as Array<keyof typeof sharePerms>))
+                (shareFile
+                ? ([
+                    "view",
+                    "download",
+                    ...(addons.reshare ? ["share"] : []),
+                  ] as Array<keyof typeof sharePerms>)
+                : ([
+                    "view",
+                    "download",
+                    "upload",
+                    "delete",
+                    ...(addons.reshare ? ["share"] : []),
+                  ] as Array<keyof typeof sharePerms>))
               ).map((k) => (
                 <label className="tiny-check" key={k}>
                   <input
@@ -937,7 +950,7 @@ export default function Files() {
                   className="btn small secondary"
                   onClick={async () => {
                     await navigator.clipboard.writeText(`${window.location.origin}/public-share/${publicToken}`);
-                    setNotice("Public link copied.");
+                    showNotice("Public link copied.");
                   }}
                 >
                   <Copy size={14} /> Copy link
@@ -951,7 +964,7 @@ export default function Files() {
               >
                 Close
               </button>
-              <button className="btn" onClick={createShare}>
+              <button className="btn" disabled={createShareMutation.isPending} aria-busy={createShareMutation.isPending} onClick={createShare}>
                 <Share2 size={15} /> Create share
               </button>
             </div>

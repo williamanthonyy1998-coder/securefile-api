@@ -6,8 +6,7 @@ import SharedPanel from "../components/shared/SharedPanel";
 export default function Shared() {
   const [data, setData] = useState<any[]>([]),
     [users, setUsers] = useState<any[]>([]),
-    [err, setErr] = useState(""),
-    [notice, setNotice] = useState("");
+    [err, setErr] = useState("");
   const [refresh, setRefresh] = useState(0);
   useEffect(() => {
     load();
@@ -35,16 +34,6 @@ export default function Shared() {
           <RefreshCw size={15} /> Refresh
         </button>
       </div>
-      {err && (
-        <div className="error" style={{ marginBottom: 16 }}>
-          {err}
-        </div>
-      )}
-      {notice && (
-        <div className="success" style={{ marginBottom: 16 }}>
-          {notice}
-        </div>
-      )}
       <SharedPanel
         data={data}
         refresh={() => setRefresh((x) => x + 1)}

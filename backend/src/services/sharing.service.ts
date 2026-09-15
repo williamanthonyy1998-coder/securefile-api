@@ -118,6 +118,10 @@ class SharingService {
     }
 
     const rawPublic = type === "PUBLIC" ? randomToken() : null;
+    // File sharing is intentionally limited to View / Download / Re-share.
+    // Folder sharing supports View / Download / Upload / Delete / Re-share,
+    // but folder editing is never exposed through sharing.
+    const isFileShare = Boolean(fileId);
     const s = await this.db.share.create({
       data: {
         companyId,
@@ -129,9 +133,9 @@ class SharingService {
         publicTokenHash: rawPublic ? hashToken(rawPublic) : undefined,
         canView: permissions.view !== false,
         canDownload: Boolean(permissions.download),
-        canUpload: Boolean(permissions.upload),
-        canEdit: Boolean(permissions.edit),
-        canDelete: Boolean(permissions.delete),
+        canUpload: isFileShare ? false : Boolean(permissions.upload),
+        canEdit: false,
+        canDelete: isFileShare ? false : Boolean(permissions.delete),
         canShare: Boolean(permissions.share),
         passwordHash: password ? await hashPassword(String(password)) : undefined,
         expiresAt: expiresAt ? new Date(expiresAt) : undefined,
@@ -186,8 +190,8 @@ class SharingService {
       include: {
         file: { select: { id: true, name: true, mimeType: true } },
         folder: { select: { id: true, name: true } },
-        recipient: { select: { id: true, email: true, uniqueName: true } },
-        owner: { select: { id: true, email: true, uniqueName: true } },
+        recipient: { select: { id: true, email: true, uniqueName: true, avatarUrl: true } },
+        owner: { select: { id: true, email: true, uniqueName: true, avatarUrl: true } },
       },
       orderBy: { createdAt: "desc" },
     });
@@ -221,8 +225,19 @@ class SharingService {
     }
 
     const data: Record<string, unknown> = {};
-    for (const key of permissionKeys) {
+    const isFileShare = Boolean(s.fileId);
+    const allowedKeys = isFileShare
+      ? (["canView", "canDownload", "canShare"] as const)
+      : (["canView", "canDownload", "canUpload", "canDelete", "canShare"] as const);
+    for (const key of allowedKeys) {
       if (input[key] !== undefined) data[key] = Boolean(input[key]);
+    }
+    // Legacy shares may contain these flags from older builds; normalize them
+    // whenever a share is updated so the permission model stays consistent.
+    data.canEdit = false;
+    if (isFileShare) {
+      data.canUpload = false;
+      data.canDelete = false;
     }
 
     // Public folder shares are authenticated links, so their selected folder

@@ -43,3 +43,27 @@ export async function getCompanyStats(
     next(error);
   }
 }
+
+
+export async function updateMyCompany(
+  req: AuthedRequest,
+  res: Response,
+  next: NextFunction,
+) {
+  try {
+    if (!req.user?.companyId) throw new AppError("No company", 400);
+    if (req.user.role !== "COMPANY_ADMIN" && req.user.role !== "SUPER_ADMIN") {
+      throw new AppError("Only a Company Admin can edit workspace details", 403);
+    }
+
+    const body = req.body || {};
+    const company = await companyService.updateMyCompany(req.user.companyId, {
+      name: body.name,
+      businessIndustry: body.businessIndustry,
+      businessDescription: body.businessDescription,
+    });
+    return res.json(company);
+  } catch (error) {
+    next(error);
+  }
+}

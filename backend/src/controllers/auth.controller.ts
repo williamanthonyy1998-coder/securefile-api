@@ -1,6 +1,7 @@
 import { Request, Response, NextFunction } from "express";
 
 import { authService } from "../services/auth.service";
+import type { AuthedRequest } from "../middleware/auth";
 
 export async function signup(req: Request, res: Response, next: NextFunction) {
   try {
@@ -32,6 +33,26 @@ export async function login(req: Request, res: Response, next: NextFunction) {
     console.error("LOGIN_ERROR:", error);
     return next(error);
   }
+}
+
+export async function verifyTwoFactor(req: Request, res: Response, next: NextFunction) {
+  try { return res.json(await authService.verifyTwoFactor(req.body?.challengeToken, req.body?.code)); }
+  catch (error) { next(error); }
+}
+
+export async function setupTwoFactor(req: AuthedRequest, res: Response, next: NextFunction) {
+  try { return res.json(await authService.setupTwoFactor(req.user!.id)); }
+  catch (error) { next(error); }
+}
+
+export async function enableTwoFactor(req: AuthedRequest, res: Response, next: NextFunction) {
+  try { return res.json(await authService.enableTwoFactor(req.user!.id, req.body?.code)); }
+  catch (error) { next(error); }
+}
+
+export async function disableTwoFactor(req: AuthedRequest, res: Response, next: NextFunction) {
+  try { return res.json(await authService.disableTwoFactor(req.user!.id, req.body?.password, req.body?.code)); }
+  catch (error) { next(error); }
 }
 
 export async function forgotPassword(

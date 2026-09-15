@@ -103,7 +103,7 @@ class TrashService {
     companyId: string,
     actorEmail?: string,
   ) {
-    const normalized = type.toUpperCase();
+    const normalized = type.toUpperCase().replace(/S$/, "");
 
     if (normalized === "FILE") {
       const file = await this.db.file.findFirst({
@@ -199,7 +199,7 @@ class TrashService {
     companyId: string,
     actorEmail?: string,
   ) {
-    const normalized = type.toUpperCase();
+    const normalized = type.toUpperCase().replace(/S$/, "");
 
     if (normalized === "FILE") {
       const file = await this.db.file.findFirst({

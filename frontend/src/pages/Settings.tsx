@@ -33,7 +33,9 @@ const TABS: Array<{
 
 export default function Settings() {
   const [tab, setTab] = useState<SettingsTab>("profile");
-  const active = useMemo(() => TABS.find((t) => t.id === tab) || TABS[0], [tab]);
+  const isAdmin = localStorage.getItem("sf_role") === "COMPANY_ADMIN";
+  const visibleTabs = useMemo(() => isAdmin ? TABS : TABS.filter((t) => t.id === "profile" || t.id === "security"), [isAdmin]);
+  const active = useMemo(() => visibleTabs.find((t) => t.id === tab) || visibleTabs[0], [tab, visibleTabs]);
 
   return (
     <div className="space-y-6">
@@ -48,9 +50,9 @@ export default function Settings() {
       </div>
 
       <div className="grid gap-4 lg:grid-cols-[220px_minmax(0,1fr)]">
-        <aside className="settings-tabs h-fit rounded-xl border border-border bg-card p-2 shadow-sm">
+        <aside className="settings-tabs settings-tabs-sticky h-fit rounded-xl border border-border bg-card p-2 shadow-sm">
           <nav className="flex flex-col gap-0.5">
-            {TABS.map(({ id, label, icon: Icon }) => (
+            {visibleTabs.map(({ id, label, icon: Icon }) => (
               <button
                 key={id}
                 type="button"

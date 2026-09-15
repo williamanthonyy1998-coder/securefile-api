@@ -9,6 +9,8 @@ import {
   Users as UsersIcon,
   MessageSquare,
   ClipboardCheck,
+  ClipboardList,
+  CheckCircle2,
   Briefcase,
   ScanLine,
   Printer,
@@ -20,6 +22,8 @@ import {
   X,
   Menu,
   LayoutDashboard,
+  ChevronLeft,
+  ChevronRight,
 } from "lucide-react";
 import { api, token } from "@/lib/api";
 import { cn } from "@/lib/utils";
@@ -47,11 +51,11 @@ const tenantItems: Array<[string, string, any, string?]> = [
   ["files", "Files", FilesIcon],
   ["shared", "Shared", Folder],
   ["trash", "Trash", Trash2],
-  ["requests", "Requests", ClipboardCheck],
-  ["approvals", "Approvals", ClipboardCheck],
+  ["requests", "Requests", ClipboardList],
+  ["approvals", "Approvals", CheckCircle2],
   ["task-management", "Task Management", Briefcase],
-  ["chat", "Chat", MessageSquare],
   ["scan-documents", "Scan Documents", ScanLine, "scanner"],
+  ["chat", "Chat", MessageSquare],
   ["fax-documents", "Fax Documents", Printer, "fax"],
   ["ai", "AI Chat Bot", Bot],
   ["settings", "Settings", Settings],
@@ -76,54 +80,84 @@ type NotificationItem = {
   createdAt: string;
 };
 
+function sidebarSection(to: string) {
+  if (to === "users") return "Administration";
+  if (["dashboard", "files", "shared", "trash", "requests", "approvals", "task-management", "scan-documents"].includes(to)) return "Workspace";
+  if (["chat", "fax-documents", "ai"].includes(to)) return "Collaboration";
+  if (to === "settings") return "Account";
+  return "Administration";
+}
+
 function SidebarNav({
   items,
   chatHighlight,
   onNavigate,
   onChatOpen,
+  collapsed = false,
 }: {
   items: Array<[string, string, any, string?]>;
   chatHighlight: boolean;
   onNavigate?: () => void;
   onChatOpen?: () => void;
+  collapsed?: boolean;
 }) {
+  let lastSection = "";
   return (
-    <nav className="flex min-h-0 flex-1 flex-col gap-0.5 overflow-y-auto px-2 pb-3 [scrollbar-width:none] [&::-webkit-scrollbar]:hidden">
-      {items.map(([to, label, Icon]) => (
-        <NavLink
-          key={to}
-          to={"/" + to}
-          onClick={() => {
-            onNavigate?.();
-            if (to === "chat") onChatOpen?.();
-          }}
-          className={({ isActive }) =>
-            cn(
-              "relative flex items-center gap-2.5 rounded-lg px-3 py-2.5 text-[13.5px] font-medium transition-colors",
-              isActive
-                ? "bg-primary text-primary-foreground"
-                : "text-sidebar-foreground hover:bg-sidebar-accent hover:text-sidebar-accent-foreground",
-              to === "chat" &&
-                chatHighlight &&
-                !isActive &&
-                "after:ml-auto after:size-1.5 after:rounded-full after:bg-primary after:shadow-[0_0_0_3px_rgba(247,127,0,0.16)] after:content-['']",
-            )
-          }
-        >
-          {({ isActive }) => (
-            <>
-              <Icon
-                size={17}
-                className={cn(
-                  "shrink-0 opacity-90",
-                  isActive && "text-primary-foreground opacity-100",
-                )}
-              />
-              <span className="truncate">{label}</span>
-            </>
-          )}
-        </NavLink>
-      ))}
+    <nav
+      className={cn(
+        "flex min-h-0 flex-1 flex-col overflow-y-auto pb-3 [scrollbar-width:none] [&::-webkit-scrollbar]:hidden",
+        collapsed ? "px-2" : "px-2.5",
+      )}
+    >
+      {items.map(([to, label, Icon]) => {
+        const section = sidebarSection(to);
+        const isDashboard = to === "dashboard";
+        const showSection = !collapsed && !isDashboard && section !== lastSection;
+        if (!isDashboard) lastSection = section;
+        return (
+          <div key={to} className="contents">
+            {showSection && (
+              <div className="sidebar-section-label" aria-hidden="true">
+                {section}
+              </div>
+            )}
+            <NavLink
+              to={"/" + to}
+              title={collapsed ? label : undefined}
+              onClick={() => {
+                onNavigate?.();
+                if (to === "chat") onChatOpen?.();
+              }}
+              className={({ isActive }) =>
+                cn(
+                  "relative flex items-center rounded-lg py-2.5 text-[13.5px] font-medium transition-all duration-200",
+                  collapsed ? "mx-1 justify-center px-0" : "gap-2.5 px-3",
+                  isActive
+                    ? "bg-primary text-primary-foreground shadow-[0_8px_22px_rgba(247,127,0,0.16)]"
+                    : "text-sidebar-foreground hover:bg-sidebar-accent hover:text-sidebar-accent-foreground",
+                  to === "chat" &&
+                    chatHighlight &&
+                    !isActive &&
+                    "after:ml-auto after:size-1.5 after:rounded-full after:bg-primary after:shadow-[0_0_0_3px_rgba(247,127,0,0.16)] after:content-['']",
+                )
+              }
+            >
+              {({ isActive }) => (
+                <>
+                  <Icon
+                    size={17}
+                    className={cn(
+                      "shrink-0 opacity-90",
+                      isActive && "text-primary-foreground opacity-100",
+                    )}
+                  />
+                  {!collapsed && <span className="truncate">{label}</span>}
+                </>
+              )}
+            </NavLink>
+          </div>
+        );
+      })}
     </nav>
   );
 }
@@ -134,8 +168,14 @@ export default function Layout({ children }: { children: any }) {
 
   const [q, setQ] = useState("");
   const [mobileNavOpen, setMobileNavOpen] = useState(false);
+  const [sidebarCollapsed, setSidebarCollapsed] = useState(
+    () => localStorage.getItem("sf_sidebar_collapsed") === "true",
+  );
   const role = localStorage.getItem("sf_role") || "";
   const isSuper = role === "SUPER_ADMIN";
+  const [displayName, setDisplayName] = useState(localStorage.getItem("sf_display_name") || localStorage.getItem("sf_name") || localStorage.getItem("sf_email")?.split("@")[0] || "User");
+  const [avatarUrl, setAvatarUrl] = useState(localStorage.getItem("sf_avatar_url") || "");
+  const roleLabel = role === "COMPANY_ADMIN" ? "Company Admin" : role === "SUPER_ADMIN" ? "Super Admin" : role === "CLIENT" ? "Client" : "Employee";
 
   const [addons, setAddons] = useState<Record<string, boolean>>({});
   const [notifications, setNotifications] = useState<NotificationItem[]>([]);
@@ -143,6 +183,8 @@ export default function Layout({ children }: { children: any }) {
 
   const [notificationOpen, setNotificationOpen] = useState(false);
   const [notificationToast, setNotificationToast] = useState<NotificationItem | null>(null);
+  const [alertToast, setAlertToast] = useState<{ type: "success" | "error" | "info"; message: string } | null>(null);
+  const notificationRef = useRef<HTMLDivElement | null>(null);
   const [chatHighlight, setChatHighlight] = useState(false);
   const [pageSkeleton, setPageSkeleton] = useState(true);
 
@@ -152,13 +194,58 @@ export default function Layout({ children }: { children: any }) {
     return () => window.clearTimeout(timer);
   }, [location.pathname]);
 
+  // Close the notification panel when the user clicks anywhere outside it.
+  // Keep clicks inside the panel (including mark-read / close) untouched.
+  useEffect(() => {
+    const onAlert = (event: Event) => {
+      const detail = (event as CustomEvent).detail as any;
+      const type = detail?.type === "error" || detail?.type === "info" ? detail.type : "success";
+      const message = String(detail?.message || "").trim();
+      if (!message) return;
+      setAlertToast({ type, message });
+      window.setTimeout(() => {
+        setAlertToast((current) => current?.message === message ? null : current);
+      }, type === "error" ? 6500 : 4200);
+    };
+    window.addEventListener("sf:alert", onAlert);
+    return () => window.removeEventListener("sf:alert", onAlert);
+  }, []);
+
+  useEffect(() => {
+    if (!notificationOpen) return;
+
+    const handleOutsidePointer = (event: PointerEvent) => {
+      const target = event.target;
+      if (target instanceof Node && notificationRef.current?.contains(target)) return;
+      setNotificationOpen(false);
+    };
+
+    const handleEscape = (event: KeyboardEvent) => {
+      if (event.key === "Escape") setNotificationOpen(false);
+    };
+
+    document.addEventListener("pointerdown", handleOutsidePointer);
+    document.addEventListener("keydown", handleEscape);
+
+    return () => {
+      document.removeEventListener("pointerdown", handleOutsidePointer);
+      document.removeEventListener("keydown", handleEscape);
+    };
+  }, [notificationOpen]);
+
   const skeletonVariant = useMemo(() => {
     const path = location.pathname;
     if (path === "/dashboard") return "dashboard" as const;
-    if (path.startsWith("/files")) return "files" as const;
+    if (path === "/files") return "files" as const;
+    if (path.startsWith("/files/") && path.endsWith("/view")) return "file-view" as const;
     if (path === "/users") return "users" as const;
     if (path === "/settings") return "settings" as const;
     if (path.startsWith("/chat")) return "chat" as const;
+    if (path === "/shared") return "shared" as const;
+    if (path === "/requests") return "requests" as const;
+    if (path === "/approvals") return "approvals" as const;
+    if (path === "/task-management") return "tasks" as const;
+    if (path === "/trash") return "trash" as const;
     if (path === "/scan-documents") return "scanner" as const;
     if (path === "/fax-documents") return "fax" as const;
     if (path === "/ai") return "ai" as const;
@@ -175,6 +262,47 @@ export default function Layout({ children }: { children: any }) {
     nav("/login");
   }
 
+
+  useEffect(() => {
+    const onSessionExpired = () => logout();
+    window.addEventListener("sf:session-expired", onSessionExpired);
+    return () => window.removeEventListener("sf:session-expired", onSessionExpired);
+  }, []);
+
+  // Revalidate the live account so a suspended/deleted user is signed out
+  // without having to navigate or make another API request.
+  useEffect(() => {
+    if (isSuper || !token()) return;
+    let checking = false;
+    const check = async () => {
+      if (checking || !token()) return;
+      checking = true;
+      try {
+        await api("/users/me", { headers: { "X-SF-Force-Refresh": "true", "X-SF-Session-Check": "true" } });
+      } catch {
+        // api() dispatches sf:session-expired on 401.
+      } finally {
+        checking = false;
+      }
+    };
+    const interval = window.setInterval(check, 30000);
+    const onFocus = () => void check();
+    window.addEventListener("focus", onFocus);
+    document.addEventListener("visibilitychange", onFocus);
+    return () => {
+      window.clearInterval(interval);
+      window.removeEventListener("focus", onFocus);
+      document.removeEventListener("visibilitychange", onFocus);
+    };
+  }, [isSuper]);
+
+  function toggleSidebar() {
+    setSidebarCollapsed((current) => {
+      const next = !current;
+      localStorage.setItem("sf_sidebar_collapsed", String(next));
+      return next;
+    });
+  }
 
   useEffect(() => {
     if (isSuper) return;
@@ -283,12 +411,23 @@ export default function Layout({ children }: { children: any }) {
       .then((me: any) => {
         if (!me) return;
         if (me.email) localStorage.setItem("sf_email", me.email);
-        if (me.uniqueName) localStorage.setItem("sf_name", me.uniqueName);
+        if (me.uniqueName) { localStorage.setItem("sf_name", me.uniqueName); localStorage.setItem("sf_display_name", me.uniqueName); setDisplayName(me.uniqueName); }
+        if (me.avatarUrl !== undefined) { localStorage.setItem("sf_avatar_url", me.avatarUrl || ""); setAvatarUrl(me.avatarUrl || ""); }
         if (me.role) localStorage.setItem("sf_role", me.role);
         localStorage.setItem("sf_sidebar_items", JSON.stringify(me.sidebarItems || ["files"]));
       })
       .catch(() => {});
   }, [isSuper]);
+
+  useEffect(() => {
+    const onProfile = (event: Event) => {
+      const detail = (event as CustomEvent).detail as any;
+      if (detail?.uniqueName) { setDisplayName(detail.uniqueName); localStorage.setItem("sf_display_name", detail.uniqueName); }
+      if (detail && "avatarUrl" in detail) { setAvatarUrl(detail.avatarUrl || ""); localStorage.setItem("sf_avatar_url", detail.avatarUrl || ""); }
+    };
+    window.addEventListener("sf:profile-updated", onProfile);
+    return () => window.removeEventListener("sf:profile-updated", onProfile);
+  }, []);
 
   let configuredSidebar: string[] = [];
   try {
@@ -327,14 +466,34 @@ export default function Layout({ children }: { children: any }) {
   }
 
   const email = localStorage.getItem("sf_email") || "";
-  const displayName = localStorage.getItem("sf_name") || email || "User";
   const planLabel = PLAN_NAMES[localStorage.getItem("sf_plan") || ""] || "";
   const initial = displayName.trim().charAt(0).toUpperCase() || "U";
 
   const sidebarBody = (
     <>
-      <div className="shrink-0 px-4 pb-5 pt-2 text-[22px] font-extrabold tracking-tight text-white">
-        Secure<span className="text-sidebar-primary">File</span>
+      <div className={cn(
+        "sidebar-brand-row shrink-0 border-b border-sidebar-border",
+        sidebarCollapsed ? "is-collapsed" : "",
+      )}>
+        <div className={cn(
+          "sidebar-brand-mark font-extrabold tracking-tight text-white transition-all duration-300",
+          sidebarCollapsed ? "text-[17px]" : "text-[22px]",
+        )}>
+          {sidebarCollapsed ? (
+            <>S<span className="text-sidebar-primary">F</span></>
+          ) : (
+            <>Secure<span className="text-sidebar-primary">File</span></>
+          )}
+        </div>
+        <button
+          type="button"
+          className="sidebar-toggle-button"
+          aria-label={sidebarCollapsed ? "Expand sidebar" : "Collapse sidebar"}
+          title={sidebarCollapsed ? "Expand sidebar" : "Collapse sidebar"}
+          onClick={toggleSidebar}
+        >
+          {sidebarCollapsed ? <ChevronRight size={15} /> : <ChevronLeft size={15} />}
+        </button>
       </div>
 
       <SidebarNav
@@ -342,24 +501,32 @@ export default function Layout({ children }: { children: any }) {
         chatHighlight={chatHighlight}
         onNavigate={() => setMobileNavOpen(false)}
         onChatOpen={() => setChatHighlight(false)}
+        collapsed={sidebarCollapsed}
       />
 
-      <div className="mt-auto border-t border-sidebar-border px-2 pt-3">
+      <div className={cn("mt-auto border-t border-sidebar-border px-2 pt-3", sidebarCollapsed ? "pb-2" : "pb-3")}>
         <Button
           variant="ghost"
-          className="h-auto w-full justify-start gap-2.5 rounded-lg px-3 py-2.5 text-[13.5px] font-medium text-sidebar-foreground hover:bg-sidebar-accent hover:text-sidebar-accent-foreground"
+          className={cn(
+            "h-auto w-full rounded-lg py-2.5 text-[13.5px] font-medium text-sidebar-foreground transition-all duration-200 hover:bg-sidebar-accent hover:text-sidebar-accent-foreground",
+            sidebarCollapsed ? "justify-center px-0" : "justify-start gap-2.5 px-3",
+          )}
+          title={sidebarCollapsed ? "Logout" : undefined}
           onClick={logout}
         >
           <LogOut size={17} />
-          Logout
+          {!sidebarCollapsed && "Logout"}
         </Button>
       </div>
     </>
   );
 
   return (
-    <div className="flex min-h-svh bg-background">
-      <aside className="fixed inset-y-0 left-0 z-30 hidden w-[260px] flex-col border-r border-sidebar-border bg-sidebar text-sidebar-foreground md:flex">
+    <div className="flex h-svh min-h-0 overflow-hidden bg-background">
+      <aside className={cn(
+        "fixed inset-y-0 left-0 z-30 hidden flex-col border-r border-sidebar-border bg-sidebar text-sidebar-foreground transition-[width] duration-300 ease-out md:flex",
+        sidebarCollapsed ? "w-[78px]" : "w-[260px]",
+      )}>
         {sidebarBody}
       </aside>
 
@@ -375,8 +542,11 @@ export default function Layout({ children }: { children: any }) {
         </SheetContent>
       </Sheet>
 
-      <div className="flex min-w-0 flex-1 flex-col md:pl-[260px]">
-        <header className="sticky top-0 z-20 flex h-16 items-center gap-3 border-b border-border bg-card/90 px-3 backdrop-blur-md sm:px-6">
+      <div className={cn(
+        "flex min-w-0 min-h-0 flex-1 flex-col transition-[padding] duration-300 ease-out",
+        sidebarCollapsed ? "md:pl-[78px]" : "md:pl-[260px]",
+      )}>
+        <header className="z-20 flex h-16 shrink-0 items-center gap-3 border-b border-border bg-card/95 px-3 backdrop-blur-md sm:px-6">
           <Button
             variant="outline"
             size="icon"
@@ -404,7 +574,7 @@ export default function Layout({ children }: { children: any }) {
 
           <div className="flex items-center gap-2 sm:gap-3">
             {!isSuper && (
-              <div className="relative">
+              <div ref={notificationRef} className="relative">
                 <Button
                   variant="outline"
                   size="icon"
@@ -489,31 +659,37 @@ export default function Layout({ children }: { children: any }) {
 
             <div className="flex items-center gap-2.5">
               <Avatar className="size-9 rounded-lg">
-                <AvatarFallback className="rounded-lg bg-foreground text-xs font-bold text-background">
-                  {initial}
-                </AvatarFallback>
+                {avatarUrl ? <img src={avatarUrl} alt="" className="size-full rounded-lg object-cover" /> : <AvatarFallback className="rounded-lg bg-foreground text-xs font-bold text-background">{initial}</AvatarFallback>}
               </Avatar>
               <div className="hidden min-w-0 flex-col items-end leading-tight sm:flex">
-                <span className="max-w-[180px] truncate text-[13px] font-semibold">
-                  {displayName}
-                </span>
-                <span className="mt-0.5 text-[10px] font-semibold uppercase tracking-wider text-muted-foreground">
-                  {isSuper ? "Super Admin" : role === "COMPANY_ADMIN" ? "Company Admin" : role === "EMPLOYEE" ? "Employee" : role === "CLIENT" ? "Client" : "User"}
-                </span>
-                {!isSuper && role === "COMPANY_ADMIN" && planLabel ? (
-                  <span className="mt-0.5 text-[10px] font-semibold uppercase tracking-wider text-muted-foreground">
-                    {planLabel}
-                  </span>
-                ) : null}
+                <span className="max-w-[180px] truncate text-[13px] font-semibold">{displayName}</span>
+                <span className="mt-0.5 text-[10px] font-semibold uppercase tracking-wider text-muted-foreground">{roleLabel}{!isSuper && role === "COMPANY_ADMIN" && planLabel ? ` · ${planLabel}` : ""}</span>
               </div>
             </div>
           </div>
         </header>
 
-        <section className="mx-auto w-full max-w-[1400px] flex-1 px-3 py-6 sm:px-6 sm:py-7">
+        <section className="min-h-0 flex-1 overflow-y-auto overflow-x-hidden">
+          <div className="mx-auto w-full max-w-[1400px] px-3 py-6 sm:px-6 sm:py-7">
           {pageSkeleton ? <PageSkeleton variant={skeletonVariant} /> : children}
+          </div>
         </section>
       </div>
+
+      {alertToast && !isSuper && (
+        <div
+          className={`sf-alert-toast sf-alert-toast-${alertToast.type}`}
+          role={alertToast.type === "error" ? "alert" : "status"}
+        >
+          <span className="sf-alert-toast-icon" aria-hidden="true">
+            {alertToast.type === "error" ? "!" : alertToast.type === "info" ? "i" : "✓"}
+          </span>
+          <span className="sf-alert-toast-message">{alertToast.message}</span>
+          <button type="button" className="sf-alert-toast-close" aria-label="Dismiss" onClick={() => setAlertToast(null)}>
+            <X size={14} />
+          </button>
+        </div>
+      )}
 
       {notificationToast && !isSuper && (
         <button

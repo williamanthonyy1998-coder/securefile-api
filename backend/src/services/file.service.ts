@@ -476,28 +476,34 @@ class FileService {
       data: { name, folderId },
     });
 
-    const changed = name !== f.name || folderId !== f.folderId;
+    const renamed = name !== f.name;
+    const moved = folderId !== f.folderId;
+    const changed = renamed || moved;
     if (changed) {
+      const action = renamed && moved ? "renamed and moved" : renamed ? "renamed" : "moved";
+      const title = renamed && moved ? "File renamed and moved" : renamed ? "File renamed" : "File moved";
+
       if (f.ownerId) {
         await notify(
           f.ownerId,
-          "File updated",
-          `${f.name} was renamed or moved.`,
+          title,
+          `${f.name} was ${action}.`,
           f.companyId,
           "FILE_UPDATED",
           false,
-          { entityId: f.id },
+          { entityId: f.id, metadata: { action } },
         );
       }
 
       await notifyCompanyAdmins(
         f.companyId,
-        "File updated",
-        `${f.name} was renamed or moved by ${actorEmail || "a user"}.`,
+        title,
+        `${f.name} was ${action} by ${actorEmail || "a user"}.`,
         "FILE_UPDATED",
         {
           excludeUserId: userId,
           entityId: f.id,
+          metadata: { action },
         },
       );
     }

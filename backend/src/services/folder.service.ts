@@ -163,12 +163,17 @@ class FolderService {
       },
     });
 
+    const renamed = input.name !== undefined && input.name !== folder.name;
+    const moved = parentId !== folder.parentId;
+    const action = renamed && moved ? "renamed and moved" : renamed ? "renamed" : "moved";
+    const title = renamed && moved ? "Folder renamed and moved" : renamed ? "Folder renamed" : "Folder moved";
+
     await notifyCompanyAdmins(
       folder.companyId,
-      "Folder updated",
-      `${folder.name} was renamed or moved by ${actorEmail || "a user"}.`,
+      title,
+      `${folder.name} was ${action} by ${actorEmail || "a user"}.`,
       "SYSTEM",
-      { excludeUserId: userId, entityId: folder.id },
+      { excludeUserId: userId, entityId: folder.id, metadata: { action } },
     );
 
     return updated;

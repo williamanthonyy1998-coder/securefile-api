@@ -36,6 +36,7 @@ type User = {
   role: string;
   status: string;
   emailVerifiedAt?: string | null;
+  avatarUrl?: string | null;
   personalFolderAllowed: boolean;
   sidebarItems?: string[];
   createdAt: string;
@@ -81,6 +82,7 @@ const emptyForm = {
   personalFolderAllowed: true,
   sidebarItems: ["files"] as string[],
   folderPermissions: {} as Record<string, FolderPermission>,
+  avatarUrl: null as string | null,
 };
 
 const defaultPermission = (folderId: string): FolderPermission => ({
@@ -194,6 +196,7 @@ export default function Users() {
       role: u.role === "CLIENT" ? "CLIENT" : "EMPLOYEE",
       personalFolderAllowed: u.personalFolderAllowed,
       sidebarItems: u.sidebarItems?.length ? [...u.sidebarItems] : ["files"],
+      avatarUrl: u.avatarUrl || null,
     });
     setOpen("edit");
     setAccessOpen(null);
@@ -276,6 +279,27 @@ export default function Users() {
     }));
   }
 
+  async function handleAvatarFile(file?: File) {
+    if (!file) return;
+    if (!file.type.startsWith("image/")) { setErr("Please choose an image file."); return; }
+    if (file.size > 5 * 1024 * 1024) { setErr("Profile image must be 5 MB or smaller."); return; }
+    const data = await new Promise<string>((resolve, reject) => {
+      const reader = new FileReader();
+      reader.onload = () => {
+        const img = new Image();
+        img.onload = () => {
+          const size = 320; const scale = Math.min(1, size / Math.max(img.width, img.height));
+          const canvas = document.createElement("canvas"); canvas.width = Math.max(1, Math.round(img.width * scale)); canvas.height = Math.max(1, Math.round(img.height * scale));
+          const ctx = canvas.getContext("2d"); if (!ctx) return reject(new Error("Unable to process image"));
+          ctx.drawImage(img, 0, 0, canvas.width, canvas.height); resolve(canvas.toDataURL("image/jpeg", .82));
+        };
+        img.onerror = () => reject(new Error("Unable to read image")); img.src = String(reader.result);
+      };
+      reader.onerror = reject; reader.readAsDataURL(file);
+    });
+    setForm(prev => ({ ...prev, avatarUrl: data }));
+  }
+
   async function create(e: FormEvent) {
     e.preventDefault();
     setSaving(true);
@@ -289,6 +313,7 @@ export default function Users() {
           personalFolderAllowed: form.personalFolderAllowed,
           sidebarItems: form.sidebarItems,
           folderIds: Object.keys(form.folderPermissions),
+          avatarUrl: form.avatarUrl || null,
         }),
       });
       setInvitationUrl(d.invitationUrl || "");
@@ -323,6 +348,7 @@ export default function Users() {
           email: form.email,
           role: form.role,
           personalFolderAllowed: form.personalFolderAllowed,
+          avatarUrl: form.avatarUrl || null,
         }),
       });
       setNotice("User account details updated successfully.");
@@ -486,7 +512,7 @@ export default function Users() {
                   <tr key={u.id} className={protectedUser ? "protected-user-row" : ""}>
                     <td>
                       <div className="user-cell">
-                        <span className="user-avatar">{u.uniqueName.trim().charAt(0).toUpperCase() || "U"}</span>
+                        <span className="user-avatar">{u.avatarUrl ? <img src={u.avatarUrl} alt="" /> : (u.uniqueName.trim().charAt(0).toUpperCase() || "U")}</span>
                         <span><strong>{u.uniqueName}</strong><small>{u.email}</small></span>
                       </div>
                     </td>
@@ -557,6 +583,13 @@ export default function Users() {
                     <span><strong>Account details</strong><small>Identity, email and workspace role</small></span>
                   </div>
                   <div className="editor-grid two profile-grid">
+                    <div className="field user-avatar-field">
+                      <label>Profile photo <span className="field-optional">Optional</span></label>
+                      <div className="user-avatar-upload">
+                        <div className="user-avatar-preview">{form.avatarUrl ? <img src={form.avatarUrl} alt="Profile preview" /> : <UsersRound size={22} />}</div>
+                        <div className="user-avatar-upload-copy"><strong>{form.avatarUrl ? "Profile photo selected" : "Add a profile photo"}</strong><small>JPG, PNG or WebP · max 5 MB</small><div className="user-avatar-actions"><label className="btn secondary small"><input type="file" accept="image/*" hidden onChange={e => handleAvatarFile(e.target.files?.[0])} />Choose image</label>{form.avatarUrl && <button type="button" className="text-button" onClick={() => setForm(prev => ({...prev, avatarUrl:null}))}>Remove</button>}</div></div>
+                      </div>
+                    </div>
                     <div className="field"><label htmlFor="user-name">Full name</label><input id="user-name" value={form.name} onChange={(e) => setForm({ ...form, name: e.target.value })} placeholder="Enter full name" required /></div>
                     <div className="field"><label htmlFor="user-email">Email address</label><input id="user-email" type="email" autoComplete="email" value={form.email} onChange={(e) => setForm({ ...form, email: e.target.value })} placeholder="name@company.com" required /></div>
                     <div className="field"><label htmlFor="user-role">Role</label><select id="user-role" value={form.role} onChange={(e) => setForm({ ...form, role: e.target.value })}><option value="EMPLOYEE">Employee</option><option value="CLIENT">Client</option></select><small className="field-help">Company Admin is reserved for the workspace owner and cannot be assigned here.</small></div>
@@ -571,7 +604,7 @@ export default function Users() {
                 <div className="modal-actions editor-actions">
                   <div className="editor-actions-hint">Account details only. Use the separate folder and sidebar permission buttons in the user table to manage access.</div>
                   <button type="button" className="btn secondary" onClick={resetModals}>Cancel</button>
-                  <button className="btn" disabled={saving}>{saving ? "Saving…" : open === "create" ? "Create & send invitation" : "Save changes"}</button>
+                  <button className="btn" disabled={saving} aria-busy={saving}>{saving ? "Saving…" : open === "create" ? "Create & send invitation" : "Save changes"}</button>
                 </div>
               </form>
             )}

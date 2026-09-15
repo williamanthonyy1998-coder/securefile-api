@@ -33,12 +33,17 @@ api.interceptors.response.use(
         if (error.response?.status === 401) {
             localStorage.removeItem("sf_token");
             localStorage.removeItem("sf_email");
+            localStorage.removeItem("sf_display_name");
             localStorage.removeItem("sf_user_id");
             localStorage.removeItem("sf_role");
             localStorage.removeItem("sf_addons");
             localStorage.removeItem("sf_plan");
+            localStorage.removeItem("sf_avatar_url");
+            localStorage.removeItem("sf_sidebar_items");
 
-            window.dispatchEvent(new CustomEvent("sf:auth-expired"));
+            window.dispatchEvent(new CustomEvent("sf:auth-expired", {
+                detail: { message: error.response?.data?.error || "Your session is no longer active. You have been logged out." },
+            }));
         }
 
         return Promise.reject(error);

@@ -136,7 +136,7 @@ export default function UploadToFolderModal({
             >
               Cancel
             </button>
-            <button className="btn" disabled={busy}>
+            <button className="btn" disabled={busy} aria-busy={busy}>
               <UploadCloud size={16} />
               {uploading ? `Uploading… ${progress}%` : "Upload here"}
             </button>

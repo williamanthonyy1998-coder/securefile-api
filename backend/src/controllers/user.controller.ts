@@ -31,6 +31,11 @@ export async function getCurrentUser(
   }
 }
 
+export async function updateCurrentProfile(req: AuthedRequest, res: Response, next: NextFunction) {
+  try { return res.json(await userService.updateCurrentProfile(req.user!.id, req.body || {})); }
+  catch (error) { next(error); }
+}
+
 export async function listChatUsers(
   req: AuthedRequest,
   res: Response,

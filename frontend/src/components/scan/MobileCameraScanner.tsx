@@ -131,6 +131,7 @@ export default function MobileCameraScanner({ onPage, onError, busy }: any) {
         <button
           className="btn mobile-primary-action"
           disabled={busy}
+          aria-busy={busy}
           onClick={startCamera}
         >
           <Camera size={17} /> Open Camera Scanner
@@ -148,6 +149,7 @@ export default function MobileCameraScanner({ onPage, onError, busy }: any) {
             <button
               className="btn"
               disabled={state !== "ready" || busy}
+              aria-busy={busy}
               onClick={capture}
             >
               <Camera size={17} /> Capture Page

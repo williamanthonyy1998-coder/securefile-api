@@ -339,6 +339,7 @@ export default function ScannerModule({ setErr }: any) {
           <button
             className="btn secondary"
             disabled={busy || loadingDevices}
+            aria-busy={loadingDevices}
             onClick={refreshDevices}
           >
             <RefreshCw size={15} />
@@ -347,6 +348,7 @@ export default function ScannerModule({ setErr }: any) {
           <button
             className="btn"
             disabled={busy || saving || !selectedDevice}
+            aria-busy={busy}
             onClick={scan}
           >
             <ScanLine size={16} />
@@ -359,6 +361,7 @@ export default function ScannerModule({ setErr }: any) {
           <button
             className="btn secondary"
             disabled={busy}
+            aria-busy={busy}
             onClick={checkBridge}
           >
             Check connection

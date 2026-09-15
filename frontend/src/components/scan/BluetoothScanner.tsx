@@ -163,6 +163,7 @@ export default function BluetoothScanner({ onPage, onError, busy }: any) {
         <button
           className="btn"
           disabled={busy || connected || !supported}
+          aria-busy={busy}
           onClick={connect}
         >
           <Bluetooth size={16} /> Connect Bluetooth Scanner

@@ -64,6 +64,49 @@ class CompanyService {
     };
   }
 
+
+  async updateMyCompany(companyId: string, input: {
+    name: string;
+    businessIndustry: string;
+    businessDescription?: string | null;
+  }) {
+    const name = String(input.name || "").trim();
+    const businessIndustry = String(input.businessIndustry || "").trim();
+    const businessDescription = String(input.businessDescription || "").trim();
+
+    if (name.length < 2 || name.length > 160) {
+      throw new AppError("Company name must be between 2 and 160 characters", 400);
+    }
+    if (businessIndustry.length < 2 || businessIndustry.length > 120) {
+      throw new AppError("Industry must be between 2 and 120 characters", 400);
+    }
+    if (businessDescription.length > 500) {
+      throw new AppError("Description must be 500 characters or fewer", 400);
+    }
+
+    const company = await this.db.company.update({
+      where: { id: companyId },
+      data: {
+        name,
+        businessIndustry,
+        businessDescription: businessDescription || null,
+      },
+      select: {
+        id: true,
+        name: true,
+        slug: true,
+        contactEmail: true,
+        businessIndustry: true,
+        businessDescription: true,
+        logoUrl: true,
+        createdAt: true,
+        updatedAt: true,
+      },
+    });
+
+    return company;
+  }
+
   async getCompanyStats(companyId: string, userId: string, role?: string) {
     const company = await this.db.company.findUnique({
       where: { id: companyId },

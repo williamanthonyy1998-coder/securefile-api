@@ -11,7 +11,9 @@ import {
   randomToken,
   safeSlug,
   signAccess,
+  signTwoFactorChallenge,
   verifyPassword,
+  verifyTotpCode,
 } from "../utils/security";
 import { sendUserEmail } from "./email";
 import { createCheckoutSession } from "./payment";
@@ -301,6 +303,14 @@ class AuthService {
       );
     }
 
+    if (u.twoFactorEnabled && u.twoFactorSecret) {
+      return {
+        requiresTwoFactor: true,
+        challengeToken: signTwoFactorChallenge(u.id),
+        user: { id: u.id, email: u.email, name: u.uniqueName, role: u.role },
+      };
+    }
+
     const accessToken = signAccess({
       id: u.id,
       role: u.role,
@@ -309,6 +319,7 @@ class AuthService {
     });
 
     return {
+      requiresTwoFactor: false,
       token: accessToken,
       user: {
         id: u.id,
@@ -319,6 +330,8 @@ class AuthService {
         planCode: subscription?.planCode || null,
         addons: subscription?.addons || {},
         sidebarItems: u.sidebarItems || ["files"],
+        avatarUrl: u.avatarUrl || null,
+        twoFactorEnabled: u.twoFactorEnabled,
       },
     };
   }
@@ -386,6 +399,55 @@ class AuthService {
     ]);
 
     return { ok: true };
+  }
+
+  async verifyTwoFactor(challengeRaw: unknown, codeRaw: unknown) {
+    let payload: { id: string; purpose: string };
+    try {
+      payload = (await import("../utils/security")).verifyTwoFactorChallenge(String(challengeRaw || ""));
+    } catch {
+      throw new AppError("2FA verification expired. Please sign in again.", 401);
+    }
+    if (payload.purpose !== "2fa") throw new AppError("Invalid 2FA challenge", 401);
+    const u = await this.db.user.findUnique({ where: { id: payload.id } });
+    if (!u || !u.twoFactorEnabled || !u.twoFactorSecret || !verifyTotpCode(u.twoFactorSecret, codeRaw)) {
+      throw new AppError("Invalid authentication code", 401);
+    }
+    if (u.status === "SUSPENDED") throw new AppError("Account suspended", 403);
+    const subscription = u.companyId ? await this.db.subscription.findUnique({ where: { companyId: u.companyId }, select: { status: true, planCode: true, addons: true } }) : null;
+    if (subscription?.status === "PENDING" && env.BILLING_MODE === "stripe") throw new AppError("Payment is required before your workspace can be activated", 402);
+    const accessToken = signAccess({ id: u.id, role: u.role, companyId: u.companyId, email: u.email });
+    return {
+      requiresTwoFactor: false,
+      token: accessToken,
+      user: { id: u.id, email: u.email, name: u.uniqueName, role: u.role, companyId: u.companyId, planCode: subscription?.planCode || null, addons: subscription?.addons || {}, sidebarItems: u.sidebarItems || ["files"], avatarUrl: u.avatarUrl || null },
+    };
+  }
+
+  async setupTwoFactor(userId: string) {
+    const u = await this.db.user.findUnique({ where: { id: userId } });
+    if (!u) throw new AppError("User not found", 404);
+    const { randomTotpSecret, totpUri } = await import("../utils/security");
+    const secret = randomTotpSecret();
+    await this.db.user.update({ where: { id: u.id }, data: { twoFactorPendingSecret: secret } });
+    return { secret, otpauthUrl: totpUri(secret, u.email), enabled: u.twoFactorEnabled };
+  }
+
+  async enableTwoFactor(userId: string, codeRaw: unknown) {
+    const u = await this.db.user.findUnique({ where: { id: userId } });
+    if (!u?.twoFactorPendingSecret) throw new AppError("Start 2FA setup first", 400);
+    if (!verifyTotpCode(u.twoFactorPendingSecret, codeRaw)) throw new AppError("Invalid authentication code", 400);
+    await this.db.user.update({ where: { id: u.id }, data: { twoFactorEnabled: true, twoFactorSecret: u.twoFactorPendingSecret, twoFactorPendingSecret: null } });
+    return { ok: true, enabled: true };
+  }
+
+  async disableTwoFactor(userId: string, passwordRaw: unknown, codeRaw: unknown) {
+    const u = await this.db.user.findUnique({ where: { id: userId } });
+    if (!u?.passwordHash || !u.twoFactorSecret) throw new AppError("2FA is not enabled", 400);
+    if (!(await verifyPassword(String(passwordRaw || ""), u.passwordHash))) throw new AppError("Current password is incorrect", 401);
+    if (!verifyTotpCode(u.twoFactorSecret, codeRaw)) throw new AppError("Invalid authentication code", 401);
+    await this.db.user.update({ where: { id: u.id }, data: { twoFactorEnabled: false, twoFactorSecret: null, twoFactorPendingSecret: null } });
+    return { ok: true, enabled: false };
   }
 }
 
