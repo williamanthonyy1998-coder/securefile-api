@@ -183,7 +183,6 @@ export default function Layout({ children }: { children: any }) {
 
   const [notificationOpen, setNotificationOpen] = useState(false);
   const [notificationToast, setNotificationToast] = useState<NotificationItem | null>(null);
-  const [alertToast, setAlertToast] = useState<{ type: "success" | "error" | "info"; message: string } | null>(null);
   const notificationRef = useRef<HTMLDivElement | null>(null);
   const [chatHighlight, setChatHighlight] = useState(false);
   const [pageSkeleton, setPageSkeleton] = useState(true);
@@ -193,23 +192,6 @@ export default function Layout({ children }: { children: any }) {
     const timer = window.setTimeout(() => setPageSkeleton(false), 420);
     return () => window.clearTimeout(timer);
   }, [location.pathname]);
-
-  // Close the notification panel when the user clicks anywhere outside it.
-  // Keep clicks inside the panel (including mark-read / close) untouched.
-  useEffect(() => {
-    const onAlert = (event: Event) => {
-      const detail = (event as CustomEvent).detail as any;
-      const type = detail?.type === "error" || detail?.type === "info" ? detail.type : "success";
-      const message = String(detail?.message || "").trim();
-      if (!message) return;
-      setAlertToast({ type, message });
-      window.setTimeout(() => {
-        setAlertToast((current) => current?.message === message ? null : current);
-      }, type === "error" ? 6500 : 4200);
-    };
-    window.addEventListener("sf:alert", onAlert);
-    return () => window.removeEventListener("sf:alert", onAlert);
-  }, []);
 
   useEffect(() => {
     if (!notificationOpen) return;
@@ -480,9 +462,17 @@ export default function Layout({ children }: { children: any }) {
           sidebarCollapsed ? "text-[17px]" : "text-[22px]",
         )}>
           {sidebarCollapsed ? (
-            <>S<span className="text-sidebar-primary">F</span></>
+            <img
+              src="/securefile-favicon.png"
+              alt="SecureFile"
+              className="sidebar-brand-icon"
+            />
           ) : (
-            <>Secure<span className="text-sidebar-primary">File</span></>
+            <img
+              src="/securefile-logo.png"
+              alt="SecureFile"
+              className="sidebar-brand-logo"
+            />
           )}
         </div>
         <button
@@ -658,8 +648,8 @@ export default function Layout({ children }: { children: any }) {
             <Separator orientation="vertical" className="hidden h-8 sm:block" />
 
             <div className="flex items-center gap-2.5">
-              <Avatar className="size-9 rounded-lg">
-                {avatarUrl ? <img src={avatarUrl} alt="" className="size-full rounded-lg object-cover" /> : <AvatarFallback className="rounded-lg bg-foreground text-xs font-bold text-background">{initial}</AvatarFallback>}
+              <Avatar className="size-9 rounded-full">
+                {avatarUrl ? <img src={avatarUrl} alt="" className="size-full rounded-full object-cover" /> : <AvatarFallback className="rounded-full bg-foreground text-xs font-bold text-background">{initial}</AvatarFallback>}
               </Avatar>
               <div className="hidden min-w-0 flex-col items-end leading-tight sm:flex">
                 <span className="max-w-[180px] truncate text-[13px] font-semibold">{displayName}</span>
@@ -675,21 +665,6 @@ export default function Layout({ children }: { children: any }) {
           </div>
         </section>
       </div>
-
-      {alertToast && !isSuper && (
-        <div
-          className={`sf-alert-toast sf-alert-toast-${alertToast.type}`}
-          role={alertToast.type === "error" ? "alert" : "status"}
-        >
-          <span className="sf-alert-toast-icon" aria-hidden="true">
-            {alertToast.type === "error" ? "!" : alertToast.type === "info" ? "i" : "✓"}
-          </span>
-          <span className="sf-alert-toast-message">{alertToast.message}</span>
-          <button type="button" className="sf-alert-toast-close" aria-label="Dismiss" onClick={() => setAlertToast(null)}>
-            <X size={14} />
-          </button>
-        </div>
-      )}
 
       {notificationToast && !isSuper && (
         <button

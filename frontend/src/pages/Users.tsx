@@ -463,18 +463,6 @@ export default function Users() {
         <button className="btn" onClick={openCreate}><UserPlus size={16} /> Add user</button>
       </div>
 
-      {err && <div className="error" style={{ marginBottom: 16 }}>{err}</div>}
-      {notice && (
-        <div className="success" style={{ marginBottom: 16 }}>
-          <span>{notice}</span>
-          {invitationUrl && (
-            <button className="link-button" onClick={() => navigator.clipboard.writeText(invitationUrl)} style={{ marginLeft: 10, display: "inline-flex", alignItems: "center", gap: 5 }}>
-              <Copy size={14} /> Copy invitation link
-            </button>
-          )}
-        </div>
-      )}
-
       <div className="cards">
         <div className="stat"><span>Purchased seats</span><strong>{meta?.purchasedSeats ?? "—"}</strong></div>
         <div className="stat"><span>Used seats</span><strong>{meta?.usedSeats ?? users.length}</strong></div>

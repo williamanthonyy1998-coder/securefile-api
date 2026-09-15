@@ -260,7 +260,7 @@ export async function deleteFile(
       req.user!.email,
       String(req.params.id),
     );
-    return res.status(204).end();
+    return res.json({ ok: true, type: "FILE", id: String(req.params.id), deleted: true });
   } catch (error) {
     next(error);
   }

@@ -103,7 +103,11 @@ class TrashService {
     companyId: string,
     actorEmail?: string,
   ) {
-    const normalized = type.toUpperCase().replace(/S$/, "");
+    const normalized = String(type || "")
+      .trim()
+      .toUpperCase()
+      .replace(/[^A-Z]/g, "")
+      .replace(/S$/, "");
 
     if (normalized === "FILE") {
       const file = await this.db.file.findFirst({
@@ -140,7 +144,7 @@ class TrashService {
         { excludeUserId: userId, entityId: id },
       );
 
-      return { ok: true };
+      return { ok: true, type: "FILE", id, restored: true };
     }
 
     if (normalized === "FOLDER") {
@@ -185,7 +189,7 @@ class TrashService {
         { excludeUserId: userId, entityId: id },
       );
 
-      return { ok: true };
+      return { ok: true, type: "FOLDER", id, restored: true };
     }
 
     throw new AppError("Invalid trash item type", 400);
@@ -199,7 +203,11 @@ class TrashService {
     companyId: string,
     actorEmail?: string,
   ) {
-    const normalized = type.toUpperCase().replace(/S$/, "");
+    const normalized = String(type || "")
+      .trim()
+      .toUpperCase()
+      .replace(/[^A-Z]/g, "")
+      .replace(/S$/, "");
 
     if (normalized === "FILE") {
       const file = await this.db.file.findFirst({

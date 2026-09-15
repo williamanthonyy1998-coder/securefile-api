@@ -246,7 +246,7 @@ class FolderService {
       `${folder.name} and its contents were moved to Trash by ${actorEmail || "a user"}.`,
       "FILE_DELETED",
       { excludeUserId: userId, entityId: folder.id },
-    );
+    ).catch(() => undefined);
   }
 }
 

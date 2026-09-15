@@ -1,20 +1,6 @@
 import { useEffect, useMemo, useState } from "react";
 import { Link, useNavigate, useParams } from "react-router-dom";
-import {
-  CheckCircle2,
-  Download,
-  Eye,
-  FileText,
-  FolderOpen,
-  KeyRound,
-  LockKeyhole,
-  LogIn,
-  ShieldCheck,
-  Upload,
-  Pencil,
-  Trash2,
-  Share2,
-} from "lucide-react";
+import { CheckCircle2, Download, Eye, FileText, FolderOpen, KeyRound, LockKeyhole, LogIn, ShieldCheck, Upload, Pencil, Trash2, Share2, EyeOff } from "lucide-react";
 import { api, API, token as getAuthToken } from "../lib/api";
 
 type ShareData = {
@@ -54,6 +40,7 @@ export default function PublicShare() {
   const { token = "" } = useParams();
   const navigate = useNavigate();
   const [password, setPassword] = useState("");
+  const [showSharePassword, setShowSharePassword] = useState(false);
   const [data, setData] = useState<ShareData | null>(null);
   const [folderAccess, setFolderAccess] = useState<FolderAccessData | null>(null);
   const [contentUrl, setContentUrl] = useState("");
@@ -213,14 +200,7 @@ export default function PublicShare() {
             <p>{loading ? "Verifying the secure link and preparing the shared resource…" : "Enter the password configured by the owner to continue."}</p>
             <label>
               Share password
-              <input
-                autoFocus
-                type="password"
-                value={password}
-                onChange={e => setPassword(e.target.value)}
-                onKeyDown={e => { if (e.key === "Enter") unlock(); }}
-                placeholder="Enter password"
-              />
+              <div className="auth-password-wrap"><input autoFocus type={showSharePassword ? "text" : "password"} value={password} onChange={e => setPassword(e.target.value)} onKeyDown={e => { if (e.key === "Enter") unlock(); }} placeholder="Enter password" /><button type="button" onClick={() => setShowSharePassword(v => !v)} aria-label={showSharePassword ? "Hide password" : "Show password"}>{showSharePassword ? <EyeOff size={17}/> : <Eye size={17}/>}</button></div>
             </label>
             {err && <div className="public-share-error">{err}</div>}
             <button className="btn public-share-primary" onClick={unlock} disabled={loading} aria-busy={loading}>

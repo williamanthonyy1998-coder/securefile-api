@@ -100,7 +100,7 @@ export async function deleteFolder(
       req.user.email,
     );
 
-    return res.status(204).end();
+    return res.json({ ok: true, type: "FOLDER", id: String(req.params.id), deleted: true });
   } catch (error) {
     next(error);
   }

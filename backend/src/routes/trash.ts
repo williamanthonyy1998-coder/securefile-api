@@ -14,6 +14,10 @@ router.get("/", auth, listTrash);
 
 router.post("/:type/:id/restore", auth, activeSubscription, restoreTrashItem);
 router.get("/:type/:id/restore", auth, activeSubscription, restoreTrashItem);
+router.post("/files/:id/restore", auth, activeSubscription, restoreTrashItem);
+router.post("/folders/:id/restore", auth, activeSubscription, restoreTrashItem);
+router.get("/files/:id/restore", auth, activeSubscription, restoreTrashItem);
+router.get("/folders/:id/restore", auth, activeSubscription, restoreTrashItem);
 
 router.delete(
   "/:type/:id",

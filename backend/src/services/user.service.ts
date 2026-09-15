@@ -22,7 +22,6 @@ const createUserSchema = z.object({
   folderIds: z.array(z.string()).optional().default([]),
   personalFolderAllowed: z.boolean().default(true),
   sidebarItems: z.array(z.enum(SIDEBAR_ITEMS)).default(["files"]),
-  avatarUrl: z.string().max(4000000).optional().nullable(),
 });
 
 function escapeHtml(value: string) {
@@ -66,12 +65,50 @@ class UserService {
         emailVerifiedAt: true,
         personalFolderAllowed: true,
         sidebarItems: true,
-        avatarUrl: true,
-        twoFactorEnabled: true,
         createdAt: true,
         _count: { select: { ownedFiles: true, ownedFolders: true } },
       },
       orderBy: { createdAt: "desc" },
+    });
+  }
+
+  async listShareRecipients(userId: string) {
+    const currentUser = await this.db.user.findUnique({
+      where: { id: userId },
+      select: { id: true, companyId: true, role: true },
+    });
+
+    if (!currentUser) throw new AppError("User not found", 404);
+    if (!currentUser.companyId) throw new AppError("No company", 400);
+
+    // Sharing recipients follow the same workspace access model used by chat:
+    // Company Admin can share with active employees/clients/admins;
+    // Employees can share with employees/admins;
+    // Clients can share only with Company Admins.
+    const allowedRoles: Role[] =
+      currentUser.role === "COMPANY_ADMIN"
+        ? ["EMPLOYEE", "CLIENT", "COMPANY_ADMIN"]
+        : currentUser.role === "EMPLOYEE"
+          ? ["EMPLOYEE", "COMPANY_ADMIN"]
+          : currentUser.role === "CLIENT"
+            ? ["COMPANY_ADMIN"]
+            : [];
+
+    return this.db.user.findMany({
+      where: {
+        companyId: currentUser.companyId,
+        id: { not: currentUser.id },
+        role: { in: allowedRoles },
+        status: "ACTIVE",
+      },
+      select: {
+        id: true,
+        email: true,
+        uniqueName: true,
+        role: true,
+        status: true,
+      },
+      orderBy: { uniqueName: "asc" },
     });
   }
 
@@ -80,25 +117,11 @@ class UserService {
       where: { id: userId },
       select: {
         id: true, email: true, uniqueName: true, role: true, companyId: true,
-        status: true, personalFolderAllowed: true, sidebarItems: true, avatarUrl: true, twoFactorEnabled: true,
+        status: true, personalFolderAllowed: true, sidebarItems: true,
       },
     });
     if (!u) throw new AppError("User not found", 404);
     return { ...u, sidebarItems: u.sidebarItems?.length ? u.sidebarItems : ["files"] };
-  }
-
-  async updateCurrentProfile(userId: string, body: { name?: unknown; avatarUrl?: unknown }) {
-    const user = await this.db.user.findUnique({ where: { id: userId } });
-    if (!user) throw new AppError("User not found", 404);
-    const name = body.name === undefined ? user.uniqueName : String(body.name).trim();
-    if (!name) throw new AppError("Name is required", 400);
-    const data: Prisma.UserUpdateInput = { uniqueName: name };
-    if (body.avatarUrl !== undefined) {
-      const avatar = body.avatarUrl == null ? null : String(body.avatarUrl);
-      if (avatar && avatar.length > 4000000) throw new AppError("Profile image is too large", 400);
-      data.avatarUrl = avatar;
-    }
-    return this.db.user.update({ where: { id: user.id }, data, select: { id: true, email: true, uniqueName: true, role: true, status: true, avatarUrl: true, twoFactorEnabled: true, sidebarItems: true } });
   }
 
   async listChatUsers(userId: string) {
@@ -206,7 +229,6 @@ class UserService {
       folderIds,
       personalFolderAllowed,
       sidebarItems,
-      avatarUrl,
     } = input.data;
 
     const sub = await this.db.subscription.findUnique({ where: { companyId } });
@@ -238,7 +260,6 @@ class UserService {
         emailVerifiedAt: new Date(),
         personalFolderAllowed,
         sidebarItems,
-        avatarUrl: avatarUrl || null,
       },
     });
 
@@ -343,8 +364,6 @@ class UserService {
       name: u.uniqueName,
       role: u.role,
       status: u.status,
-      avatarUrl: u.avatarUrl || null,
-      twoFactorEnabled: u.twoFactorEnabled,
       personalFolderAllowed: u.personalFolderAllowed,
       emailDelivered,
       invitationUrl: env.NODE_ENV === "development" ? invitationUrl : undefined,
@@ -431,7 +450,6 @@ class UserService {
       personalFolderAllowed?: unknown;
       sidebarItems?: unknown;
       folders?: unknown;
-      avatarUrl?: unknown;
     },
   ) {
     const user = await this.db.user.findFirst({
@@ -476,11 +494,6 @@ class UserService {
         )
       : (user.sidebarItems?.length ? user.sidebarItems : ["files"]);
     data.sidebarItems = sidebarItems;
-    if (body.avatarUrl !== undefined) {
-      const avatar = body.avatarUrl == null ? null : String(body.avatarUrl);
-      if (avatar && avatar.length > 4000000) throw new AppError("Profile image is too large", 400);
-      data.avatarUrl = avatar;
-    }
 
     const requestedFolders = Array.isArray(body.folders) ? body.folders : null;
     const folderPermissions = requestedFolders

@@ -1,16 +1,5 @@
 import { FormEvent, useEffect, useMemo, useState } from "react";
-import {
-  Building2,
-  Edit3,
-  Plus,
-  RefreshCw,
-  Search,
-  Trash2,
-  Users,
-  HardDrive,
-  ExternalLink,
-  Check,
-} from "lucide-react";
+import { Building2, Edit3, Plus, RefreshCw, Search, Trash2, Users, HardDrive, ExternalLink, Check, Eye, EyeOff } from "lucide-react";
 import { sfConfirm } from "../lib/dialogs";
 import { api } from "../lib/api";
 
@@ -55,6 +44,7 @@ const ADDONS = [
 ] as const;
 
 export default function SuperAdmin() {
+  const [showAdminPassword, setShowAdminPassword] = useState(false);
   const [companies, setCompanies] = useState<Company[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
@@ -342,11 +332,6 @@ export default function SuperAdmin() {
         </div>
       </div>
 
-      {error && (
-        <div className="error" style={{ marginBottom: 18 }}>
-          {error}
-        </div>
-      )}
 
       <div className="cards sa-stats">
         <div className="stat">
@@ -752,14 +737,7 @@ export default function SuperAdmin() {
                 </label>
                 <label>
                   Temporary password
-                  <input
-                    type="password"
-                    minLength={12}
-                    value={form.adminPassword}
-                    onChange={(e) =>
-                      setForm({ ...form, adminPassword: e.target.value })
-                    }
-                  />
+                  <div className="auth-password-wrap"><input type={showAdminPassword ? "text" : "password"} minLength={12} value={form.adminPassword} onChange={(e) => setForm({ ...form, adminPassword: e.target.value })} /><button type="button" onClick={() => setShowAdminPassword(v => !v)} aria-label={showAdminPassword ? "Hide password" : "Show password"}>{showAdminPassword ? <EyeOff size={17}/> : <Eye size={17}/>}</button></div>
                 </label>
               </>
             )}

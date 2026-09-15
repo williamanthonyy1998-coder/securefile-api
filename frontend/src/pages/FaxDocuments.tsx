@@ -47,16 +47,6 @@ export default function FaxDocuments() {
           <RefreshCw size={15} /> Refresh
         </button>
       </div>
-      {err && (
-        <div className="error" style={{ marginBottom: 16 }}>
-          {err}
-        </div>
-      )}
-      {notice && (
-        <div className="success" style={{ marginBottom: 16 }}>
-          {notice}
-        </div>
-      )}
       <div key={refresh}>
         <FaxUpload setErr={setErr} />
       </div>

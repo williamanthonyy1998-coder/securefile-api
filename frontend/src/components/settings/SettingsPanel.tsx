@@ -66,7 +66,6 @@ export default function SettingsPanel({ tab }: SettingsPanelProps) {
   const [twoFaBusy, setTwoFaBusy] = useState(false);
   const [twoFaEnabled, setTwoFaEnabled] = useState(false);
   const [err, setErr] = useState("");
-  const [notice, setNotice] = useState("");
 
   async function load() {
     try {
@@ -116,7 +115,7 @@ export default function SettingsPanel({ tab }: SettingsPanelProps) {
       errorCorrectionLevel: "M",
       color: { dark: "#111827", light: "#ffffff" },
     })
-      .then((url) => { if (!cancelled) setTwoFaQrDataUrl(url); })
+      .then((url: string) => { if (!cancelled) setTwoFaQrDataUrl(url); })
       .catch(() => { if (!cancelled) setTwoFaQrDataUrl(""); });
     return () => { cancelled = true; };
   }, [twoFaSetup?.otpauthUrl]);
@@ -149,7 +148,7 @@ export default function SettingsPanel({ tab }: SettingsPanelProps) {
   async function getQuote() {
     try {
       setErr("");
-      setNotice("");
+      
       const d = await api("/subscriptions/change-quote", {
         method: "POST",
         body: JSON.stringify({ users, storageGb: storage, months }),
@@ -164,7 +163,7 @@ export default function SettingsPanel({ tab }: SettingsPanelProps) {
     try {
       setBusy(true);
       setErr("");
-      setNotice("");
+      
       const d = await api("/subscriptions/checkout", {
         method: "POST",
         body: JSON.stringify({
@@ -179,10 +178,7 @@ export default function SettingsPanel({ tab }: SettingsPanelProps) {
         window.location.href = d.checkoutUrl;
         return;
       }
-      setNotice(
-        d.warning ||
-          "Checkout is ready. Payment must be successfully confirmed before new limits or access are applied.",
-      );
+      window.dispatchEvent(new CustomEvent("sf:alert", { detail: { type: "info", message: d.warning || "Checkout is ready. Payment must be successfully confirmed before new limits or access are applied." } }));
       await load();
     } catch (e: any) {
       setErr(e.message);
@@ -196,11 +192,9 @@ export default function SettingsPanel({ tab }: SettingsPanelProps) {
     try {
       setBusy(true);
       setErr("");
-      setNotice("");
+      
       await api("/subscriptions/cancel", { method: "POST" });
-      setNotice(
-        "Subscription canceled. Your workspace is now view-only. Renew from Settings to restore full access.",
-      );
+      window.dispatchEvent(new CustomEvent("sf:alert", { detail: { type: "success", message: "Subscription canceled. Your workspace is now view-only. Renew from Settings to restore full access." } }));
       await load();
     } catch (e: any) {
       setErr(e.message);
@@ -221,7 +215,7 @@ export default function SettingsPanel({ tab }: SettingsPanelProps) {
     try {
       setWorkspaceBusy(true);
       setErr("");
-      setNotice("");
+      
       const updated = await api("/companies/me", {
         method: "PATCH",
         body: JSON.stringify({
@@ -234,7 +228,7 @@ export default function SettingsPanel({ tab }: SettingsPanelProps) {
       setWorkspaceName(updated.name || "");
       setWorkspaceIndustry(updated.businessIndustry || "");
       setWorkspaceDescription(updated.businessDescription || "");
-      setNotice("Workspace details updated successfully.");
+      window.dispatchEvent(new CustomEvent("sf:alert", { detail: { type: "success", message: "Workspace details updated successfully." } }));
     } catch (e:any) {
       setErr(e.message || "Unable to update workspace details.");
     } finally {
@@ -244,13 +238,13 @@ export default function SettingsPanel({ tab }: SettingsPanelProps) {
 
   async function saveProfile() {
     try {
-      setProfileBusy(true); setErr(""); setNotice("");
+      setProfileBusy(true); setErr(""); 
       const updated = await api("/users/me/profile", { method: "PATCH", body: JSON.stringify({ name: profileName, avatarUrl: profileAvatar }) });
       setProfile(prev => prev ? { ...prev, uniqueName: updated.uniqueName, avatarUrl: updated.avatarUrl } : prev);
       localStorage.setItem("sf_display_name", updated.uniqueName);
       localStorage.setItem("sf_avatar_url", updated.avatarUrl || "");
       window.dispatchEvent(new CustomEvent("sf:profile-updated", { detail: updated }));
-      setNotice("Profile updated successfully.");
+      window.dispatchEvent(new CustomEvent("sf:alert", { detail: { type: "success", message: "Profile updated successfully." } }));
     } catch (e:any) { setErr(e.message || "Unable to update profile."); }
     finally { setProfileBusy(false); }
   }
@@ -262,18 +256,18 @@ export default function SettingsPanel({ tab }: SettingsPanelProps) {
   }
 
   async function enableTwoFa() {
-    try { setTwoFaBusy(true); setErr(""); await api("/auth/2fa/enable", { method: "POST", body: JSON.stringify({ code: twoFaCode }) }); setTwoFaEnabled(true); setTwoFaSetup(null); setTwoFaQrDataUrl(""); setTwoFaCode(""); setNotice("Two-factor authentication is now enabled."); }
+    try { setTwoFaBusy(true); setErr(""); await api("/auth/2fa/enable", { method: "POST", body: JSON.stringify({ code: twoFaCode }) }); setTwoFaEnabled(true); setTwoFaSetup(null); setTwoFaQrDataUrl(""); setTwoFaCode(""); window.dispatchEvent(new CustomEvent("sf:alert", { detail: { type: "success", message: "Two-factor authentication is now enabled." } })); }
     catch(e:any) { setErr(e.message || "Invalid authentication code."); }
     finally { setTwoFaBusy(false); }
   }
 
   async function disableTwoFa() {
-    const password = await sfPrompt("Enter your current password.", "", { title: "Disable 2FA" });
+    const password = await sfPrompt("Enter your current password.", "", { title: "Disable 2FA", inputType: "password", inputLabel: "Password", inputPlaceholder: "Enter your current password" });
     if (password === null) return;
-    const code = await sfPrompt("Enter your current 6-digit authenticator code.", "", { title: "Disable 2FA" });
+    const code = await sfPrompt("Enter your current 6-digit authenticator code.", "", { title: "Disable 2FA", inputLabel: "Authenticator code", inputPlaceholder: "000000" });
     if (code === null) return;
     if (!(await sfConfirm("Disable two-factor authentication for this account?", { title: "Disable 2FA", danger: true, confirmLabel: "Disable 2FA" }))) return;
-    try { setTwoFaBusy(true); setErr(""); await api("/auth/2fa/disable", { method: "POST", body: JSON.stringify({ password, code }) }); setTwoFaEnabled(false); setNotice("Two-factor authentication has been disabled."); }
+    try { setTwoFaBusy(true); setErr(""); await api("/auth/2fa/disable", { method: "POST", body: JSON.stringify({ password, code }) }); setTwoFaEnabled(false); window.dispatchEvent(new CustomEvent("sf:alert", { detail: { type: "success", message: "Two-factor authentication has been disabled." } })); }
     catch(e:any) { setErr(e.message || "Unable to disable 2FA."); }
     finally { setTwoFaBusy(false); }
   }
@@ -287,15 +281,12 @@ export default function SettingsPanel({ tab }: SettingsPanelProps) {
     try {
       setResetBusy(true);
       setErr("");
-      setNotice("");
+      
       const d = await api("/auth/forgot-password", {
         method: "POST",
         body: JSON.stringify({ email }),
       });
-      setNotice(
-        d.message ||
-          "If an account exists for this email, a password reset link has been sent.",
-      );
+      window.dispatchEvent(new CustomEvent("sf:alert", { detail: { type: "success", message: d.message || "If an account exists for this email, a password reset link has been sent." } }));
     } catch (e: any) {
       setErr(e.message || "Unable to send password reset email.");
     } finally {
@@ -353,7 +344,6 @@ export default function SettingsPanel({ tab }: SettingsPanelProps) {
             </CardContent>
           </Card>
         )}
-        {notice && <div className="success">{notice}</div>}{err && <div className="error">{err}</div>}
       </div>
     );
   }
@@ -375,7 +365,6 @@ export default function SettingsPanel({ tab }: SettingsPanelProps) {
             {twoFaSetup && !twoFaEnabled && <div className="twofa-setup-card"><div className="twofa-setup-grid"><div className="twofa-manual-card">{twoFaQrDataUrl ? <div className="twofa-qr-wrap"><img src={twoFaQrDataUrl} alt="SecureFile 2FA setup QR code" /></div> : <div className="twofa-qr-placeholder"><Smartphone size={28}/><span>Preparing QR code…</span></div>}<strong>Scan with your authenticator</strong><small>Open Google Authenticator, Microsoft Authenticator, 1Password, Authy, or another TOTP app and scan this QR code.</small>{twoFaSetup.otpauthUrl && <a className="btn secondary small" href={twoFaSetup.otpauthUrl}>Open authenticator</a>}<code>SecureFile</code></div><div className="space-y-4"><div><p className="text-sm font-semibold">1. Scan the QR code</p><p className="text-xs text-muted-foreground">Use Google Authenticator, Microsoft Authenticator, 1Password, Authy, or another TOTP app.</p></div><div><p className="mb-1 text-sm font-semibold">2. Or enter this setup key</p><div className="flex gap-2"><Input readOnly value={twoFaSetup.secret} className="font-mono tracking-widest"/><Button type="button" variant="outline" size="icon" onClick={()=>navigator.clipboard.writeText(twoFaSetup.secret)}><Copy size={15}/></Button></div></div><div><p className="mb-1 text-sm font-semibold">3. Enter the 6-digit code</p><div className="flex gap-2"><Input inputMode="numeric" maxLength={6} value={twoFaCode} onChange={e=>setTwoFaCode(e.target.value.replace(/\D/g,"").slice(0,6))} placeholder="000000" className="text-center font-mono text-lg tracking-[0.35em]"/><Button type="button" onClick={enableTwoFa} disabled={twoFaBusy || twoFaCode.length!==6} aria-busy={twoFaBusy}>{twoFaBusy ? "Verifying…" : "Verify & enable"}</Button></div></div></div></div></div>}
           </CardContent>
         </Card>
-        {notice && <div className="success">{notice}</div>}{err && <div className="error">{err}</div>}
       </div>
     );
   }
@@ -608,16 +597,6 @@ export default function SettingsPanel({ tab }: SettingsPanelProps) {
               Upfront total for {months} month(s):{" "}
               <b>${Number(quote.total).toFixed(2)}</b>. Access/limits update only
               after successful payment.
-            </div>
-          )}
-          {notice && (
-            <div className="success" style={{ marginTop: 14 }}>
-              {notice}
-            </div>
-          )}
-          {err && (
-            <div className="error" style={{ marginTop: 14 }}>
-              {err}
             </div>
           )}
         </CardContent>

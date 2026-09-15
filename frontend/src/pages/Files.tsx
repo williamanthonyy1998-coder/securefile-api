@@ -26,22 +26,7 @@ import {
 import { useFileUploader } from "../hooks/useFileUploader";
 import { UPLOAD_ACCEPT, assertAllowedUploadFile } from "../utils/uploadAllowlist";
 import { sfConfirm, sfPrompt } from "../lib/dialogs";
-import {
-  Download,
-  Edit3,
-  Eye,
-  FolderPlus,
-  Share2,
-  Trash2,
-  UploadCloud,
-  X,
-  Folder,
-  ChevronRight,
-  Copy,
-  ExternalLink,
-  ClipboardPlus,
-  Move,
-} from "lucide-react";
+import { Download, Edit3, Eye, FolderPlus, Share2, Trash2, UploadCloud, X, Folder, ChevronRight, Copy, ExternalLink, ClipboardPlus, Move, EyeOff } from "lucide-react";
 
 const emptyPerms = {
   view: true,
@@ -68,6 +53,7 @@ export default function Files() {
   const [shareRecipient, setShareRecipient] = useState("");
   const [sharePerms, setSharePerms] = useState({ ...emptyPerms });
   const [sharePassword, setSharePassword] = useState("");
+  const [showSharePassword, setShowSharePassword] = useState(false);
   const [shareExpiry, setShareExpiry] = useState("");
   const [publicToken, setPublicToken] = useState("");
   const [taskFile, setTaskFile] = useState<FileItem | null>(null);
@@ -178,7 +164,6 @@ export default function Files() {
         folderId: folderId || undefined,
         source: "UPLOAD",
       });
-      showNotice("File uploaded.");
       setError("");
     } catch (e) {
       setError(filesErrorMessage(e));
@@ -199,7 +184,6 @@ export default function Files() {
         parentId: folderId || undefined,
       });
       setFolderName("");
-      showNotice("Folder created.");
       setError("");
     } catch (e) {
       setError(filesErrorMessage(e));
@@ -214,7 +198,6 @@ export default function Files() {
         fileId: f.id,
         payload: { name },
       });
-      showNotice("File renamed.");
       setError("");
     } catch (e) {
       setError(filesErrorMessage(e));
@@ -226,7 +209,6 @@ export default function Files() {
     try {
       await deleteFileMutation.mutateAsync(f.id);
       if (selected?.id === f.id) closePreview();
-      showNotice("File deleted.");
       setError("");
     } catch (e) {
       setError(filesErrorMessage(e));
@@ -241,7 +223,6 @@ export default function Files() {
         folderId: f.id,
         payload: { name },
       });
-      showNotice("Folder renamed.");
       setError("");
     } catch (e) {
       setError(filesErrorMessage(e));
@@ -253,7 +234,6 @@ export default function Files() {
     try {
       await deleteFolderMutation.mutateAsync(f.id);
       if (folderId === f.id) setFolderId("");
-      showNotice("Folder deleted.");
       setError("");
     } catch (e) {
       setError(filesErrorMessage(e));
@@ -337,7 +317,6 @@ export default function Files() {
           ? new Date(taskForm.dueAt).toISOString()
           : undefined,
       });
-      showNotice("Task assigned.");
       setError("");
       setTaskFile(null);
     } catch (e) {
@@ -358,7 +337,6 @@ export default function Files() {
         expiresAt: shareExpiry || undefined,
       });
       setPublicToken(d.publicToken || "");
-      showNotice("Share created.");
       setError("");
       if (shareType === "INTERNAL") {
         setShareFile(null);
@@ -389,9 +367,6 @@ export default function Files() {
           payload: { parentId: moveTarget || null },
         });
       }
-      showNotice(
-        `${moveItem.type === "FILE" ? "File" : "Folder"} moved successfully.`,
-      );
       setMoveItem(null);
       setMoveTarget("");
     } catch (e) {
@@ -437,11 +412,6 @@ export default function Files() {
         </div>
       </div>
 
-      {error && (
-        <div className="error" style={{ marginBottom: 16 }}>
-          {error}
-        </div>
-      )}
 
       <div className="files-layout">
         <FolderSidebar
@@ -492,7 +462,8 @@ export default function Files() {
             )}
           </div>
 
-          <table>
+          <div className="files-table-scroll">
+            <table>
             <thead>
               <tr>
                 <th>Name</th>
@@ -596,7 +567,8 @@ export default function Files() {
                 </tr>
               ))}
             </tbody>
-          </table>
+            </table>
+          </div>
           {!files.length && (
               <div className="empty-company">
                 <h3>No files here</h3>
@@ -923,12 +895,7 @@ export default function Files() {
               <>
                 <label>
                   Password (optional)
-                  <input
-                    type="password"
-                    value={sharePassword}
-                    onChange={(e) => setSharePassword(e.target.value)}
-                    placeholder="Protect this link"
-                  />
+                  <div className="auth-password-wrap"><input type={showSharePassword ? "text" : "password"} value={sharePassword} onChange={(e) => setSharePassword(e.target.value)} placeholder="Protect this link" /><button type="button" onClick={() => setShowSharePassword(v => !v)} aria-label={showSharePassword ? "Hide password" : "Show password"}>{showSharePassword ? <EyeOff size={17}/> : <Eye size={17}/>}</button></div>
                 </label>
                 <label>
                   Expires (optional)

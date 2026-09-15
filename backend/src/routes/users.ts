@@ -4,12 +4,12 @@ import {
   acceptInvitation,
   createUser,
   getCurrentUser,
-  updateCurrentProfile,
   deleteUser,
   getUserMeta,
   getUserPermissions,
   listChatUsers,
   listUsers,
+  listShareRecipients,
   resendInvitation,
   updateUser,
   updateUserPermissions,
@@ -22,8 +22,8 @@ const router = Router();
 
 router.get("/", auth, role("COMPANY_ADMIN"), listUsers);
 router.get("/me", auth, getCurrentUser);
-router.patch("/me/profile", auth, updateCurrentProfile);
 router.get("/chat", auth, listChatUsers);
+router.get("/share-recipients", auth, listShareRecipients);
 router.get("/meta", auth, role("COMPANY_ADMIN"), getUserMeta);
 
 router.post("/", auth, activeSubscription, role("COMPANY_ADMIN"), createUser);

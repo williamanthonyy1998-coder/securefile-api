@@ -90,31 +90,22 @@ export default function SharedPanel({ data, refresh, setErr }: any) {
   }
 
   async function remove(id: string) {
-    if (
-      !(await sfConfirm(
-        "Remove this share? The recipient will immediately lose access.",
-        { title: "Remove share", danger: true, confirmLabel: "Remove share" },
-      ))
-    ) return;
+    if (!(await sfConfirm(
+      "Remove this share? The recipient will immediately lose access.",
+      { title: "Remove share", danger: true, confirmLabel: "Remove share" },
+    ))) return;
     try {
-      await api(`/sharing/${id}`, { method: "DELETE" });
+      await api(`/sharing/${id}`, { method: "DELETE", headers: { "X-Silent-Alert": "true" } });
       refresh();
-    } catch (e: any) {
-      // api() already surfaces the error through the global side toast.
-      void e;
-    }
+    } catch {}
   }
 
   async function download(share: any) {
     const fileId = share.file?.id;
     if (!fileId) return;
     try {
-      setErr("");
       await downloadPrivateFile(fileId, share.file?.name || "download");
-    } catch (e: any) {
-      // api() already surfaces the error through the global side toast.
-      void e;
-    }
+    } catch {}
   }
 
   function canViewShare(share: any) {
@@ -136,21 +127,10 @@ export default function SharedPanel({ data, refresh, setErr }: any) {
       });
     }
     if (canDownloadShare(share)) {
-      items.push({
-        key: "download",
-        label: "Download",
-        icon: <Download size={14} />,
-        onClick: () => download(share),
-      });
+      items.push({ key: "download", label: "Download", icon: <Download size={14} />, onClick: () => download(share) });
     }
     if (share.manageable) {
-      items.push({
-        key: "revoke",
-        label: "Revoke access",
-        icon: <Trash2 size={14} />,
-        danger: true,
-        onClick: () => remove(share.id),
-      });
+      items.push({ key: "revoke", label: "Revoke access", icon: <Trash2 size={14} />, danger: true, onClick: () => remove(share.id) });
     }
     return items;
   }
@@ -166,8 +146,12 @@ export default function SharedPanel({ data, refresh, setErr }: any) {
           </div>
         </div>
         <div className="shared-view-tabs" role="tablist" aria-label="Sharing views">
-          <button role="tab" aria-selected={view === "incoming"} className={view === "incoming" ? "active" : ""} onClick={() => setView("incoming")}>Shared with me <span>{grouped.incoming.length}</span></button>
-          <button role="tab" aria-selected={view === "outgoing"} className={view === "outgoing" ? "active" : ""} onClick={() => setView("outgoing")}>Shared by me <span>{grouped.outgoing.length}</span></button>
+          <button role="tab" aria-selected={view === "incoming"} className={view === "incoming" ? "active" : ""} onClick={() => setView("incoming")}>
+            Shared with me <span>{grouped.incoming.length}</span>
+          </button>
+          <button role="tab" aria-selected={view === "outgoing"} className={view === "outgoing" ? "active" : ""} onClick={() => setView("outgoing")}>
+            Shared by me <span>{grouped.outgoing.length}</span>
+          </button>
         </div>
       </div>
 
@@ -178,11 +162,14 @@ export default function SharedPanel({ data, refresh, setErr }: any) {
         <div className="shared-summary-card"><Folder size={16} /><div><strong>{visible.filter((s: any) => Boolean(s.folder)).length}</strong><span>Folders</span></div></div>
       </div>
 
-      <div className="shared-list">
+      <div className="shared-list shared-list-compact">
+        <div className="shared-list-head" aria-hidden="true">
+          <span>Resource</span><span>{view === "incoming" ? "Shared by" : "Shared to"}</span><span>Access</span><span />
+        </div>
         {!visible.length && (
           <div className="shared-empty">
             <div className="shared-empty-icon"><Share2 size={20} /></div>
-            <strong>{view === "incoming" ? "Nothing has been shared with you" : view === "outgoing" ? "You have not shared anything yet" : "No shared resources yet"}</strong>
+            <strong>{view === "incoming" ? "Nothing has been shared with you" : "You have not shared anything yet"}</strong>
             <span>When something is shared, the sender, recipient, resource and permissions will appear here.</span>
           </div>
         )}
@@ -190,19 +177,16 @@ export default function SharedPanel({ data, refresh, setErr }: any) {
         {visible.map((s: any) => {
           const outgoing = s.ownerId === me;
           const resourceName = s.file?.name || s.folder?.name || "Resource";
-          const resourceType = s.file ? "File" : s.folder ? "Folder" : "Resource";
-          const counterpart = outgoing
-            ? (s.recipient ? displayName(s.recipient) : "Anyone with the public link")
-            : displayName(s.owner);
-          const directionLabel = outgoing ? "You shared" : "Shared with you";
-          const items = actionItems(s);
+          const resourceType = s.file ? "File" : "Folder";
+          const counterpart = outgoing ? (s.recipient ? displayName(s.recipient) : "Anyone with the public link") : displayName(s.owner);
           const permissionOptions = s.file ? FILE_PERMISSIONS : FOLDER_PERMISSIONS;
+          const items = actionItems(s);
 
           return (
-            <article className="shared-item" key={s.id}>
+            <article className="shared-item shared-item-compact" key={s.id}>
               <div className="shared-item-main">
                 <div className="shared-resource-icon">
-                  {s.file ? <FileTypeIcon mimeType={s.file.mimeType} fileName={s.file.name} /> : <Folder size={18} />}
+                  {s.file ? <FileTypeIcon mimeType={s.file.mimeType} fileName={s.file.name} /> : <Folder size={17} />}
                 </div>
                 <div className="shared-resource-copy">
                   <div className="shared-resource-title-row">
@@ -210,37 +194,35 @@ export default function SharedPanel({ data, refresh, setErr }: any) {
                     <span className={`shared-type-badge ${s.file ? "file" : "folder"}`}>{resourceType}</span>
                     <span className={`shared-scope-badge ${s.type === "PUBLIC" ? "public" : "internal"}`}>{s.type === "PUBLIC" ? "Public link" : "Internal"}</span>
                   </div>
-                  <div className="shared-meta-line">
-                    <span>{directionLabel}</span>
-                    <span className="shared-meta-dot">•</span>
-                    <span>{counterpart}</span>
-                    <span className="shared-meta-dot">•</span>
-                    <span>{formatDate(s.createdAt)}</span>
-                  </div>
+                  <div className="shared-meta-line"><span>{formatDate(s.createdAt)}</span></div>
                 </div>
               </div>
 
               <div className="shared-participant">
                 <div className={`shared-person-avatar ${outgoing ? "outgoing" : "incoming"}`}>
-                  {outgoing ? (s.recipient?.avatarUrl ? <img src={s.recipient.avatarUrl} alt="" /> : initials(s.recipient ? displayName(s.recipient) : "Public")) : (s.owner?.avatarUrl ? <img src={s.owner.avatarUrl} alt="" /> : initials(displayName(s.owner)))}
+                  {outgoing
+                    ? (s.recipient?.avatarUrl ? <img src={s.recipient.avatarUrl} alt="" /> : initials(s.recipient ? displayName(s.recipient) : "Public"))
+                    : (s.owner?.avatarUrl ? <img src={s.owner.avatarUrl} alt="" /> : initials(displayName(s.owner)))}
                 </div>
-                <div><small>{outgoing ? "Sent to" : "Received from"}</small><strong>{counterpart}</strong></div>
+                <div className="shared-participant-copy">
+                  <small>{outgoing ? "Sent to" : "Received from"}</small>
+                  <strong title={counterpart}>{counterpart}</strong>
+                </div>
               </div>
 
               <div className="shared-permissions-cell">
                 <small>Access</small>
                 {s.manageable ? (
-                  <div className="shared-permission-controls">
+                  <div className="shared-permission-controls shared-permission-controls-compact">
                     {permissionOptions.map(([key, label, Icon]) => (
                       <label className={`shared-permission-chip ${s[key] ? "checked" : ""}`} key={key} title={label}>
                         <input type="checkbox" checked={Boolean(s[key])} onChange={(e) => update(s.id, key, e.target.checked)} />
-                        <Icon size={12} />
-                        <span>{label}</span>
+                        <Icon size={11} /> <span>{label}</span>
                       </label>
                     ))}
                   </div>
                 ) : (
-                  <div className="shared-permission-chips">
+                  <div className="shared-permission-chips shared-permission-chips-compact">
                     {permissionLabel(s).map((label) => <span key={label}>{label}</span>)}
                   </div>
                 )}

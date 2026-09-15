@@ -1,5 +1,5 @@
 import { createContext, useCallback, useContext, useEffect, useState, type ReactNode } from "react";
-import { AlertTriangle, CheckCircle2, Info, X, XCircle } from "lucide-react";
+import { AlertTriangle, CheckCircle2, Info, X, XCircle, Eye, EyeOff } from "lucide-react";
 
 type DialogKind = "confirm" | "alert" | "prompt";
 type DialogTone = "danger" | "warning" | "info" | "success";
@@ -14,6 +14,7 @@ type DialogRequest = {
   inputLabel?: string;
   inputPlaceholder?: string;
   defaultValue?: string;
+  inputType?: "text" | "password";
 };
 
 type DialogContextValue = {
@@ -32,12 +33,14 @@ export function DialogProvider({ children }: { children: ReactNode }) {
   const [request, setRequest] = useState<DialogRequest | null>(null);
   const [resolver, setResolver] = useState<((value: boolean | string | null) => void) | null>(null);
   const [inputValue, setInputValue] = useState("");
+  const [showPassword, setShowPassword] = useState(false);
 
   const close = useCallback((result: boolean | string | null) => {
     resolver?.(result);
     setResolver(null);
     setRequest(null);
     setInputValue("");
+    setShowPassword(false);
   }, [resolver]);
 
   const submit = useCallback(() => {
@@ -53,6 +56,7 @@ export function DialogProvider({ children }: { children: ReactNode }) {
     return new Promise<boolean>((resolve) => {
       setRequest({ ...normalize(input), kind: "confirm" });
       setInputValue("");
+      setShowPassword(false);
       setResolver(() => (value: boolean | string | null) => resolve(value === true));
     });
   }, []);
@@ -61,6 +65,7 @@ export function DialogProvider({ children }: { children: ReactNode }) {
     return new Promise<void>((resolve) => {
       setRequest({ ...normalize(input), kind: "alert" });
       setInputValue("");
+      setShowPassword(false);
       setResolver(() => () => resolve());
     });
   }, []);
@@ -118,13 +123,26 @@ export function DialogProvider({ children }: { children: ReactNode }) {
               {request.kind === "prompt" && (
                 <div className="sf-dialog-input-wrap">
                   {request.inputLabel && <label htmlFor="sf-dialog-input">{request.inputLabel}</label>}
-                  <input
-                    id="sf-dialog-input"
-                    autoFocus
-                    value={inputValue}
-                    placeholder={request.inputPlaceholder || "Enter a value"}
-                    onChange={(e) => setInputValue(e.target.value)}
-                  />
+                  <div className={request.inputType === "password" ? "sf-dialog-password-wrap" : undefined}>
+                    <input
+                      id="sf-dialog-input"
+                      autoFocus
+                      type={request.inputType === "password" && !showPassword ? "password" : "text"}
+                      value={inputValue}
+                      placeholder={request.inputPlaceholder || "Enter a value"}
+                      onChange={(e) => setInputValue(e.target.value)}
+                    />
+                    {request.inputType === "password" && (
+                      <button
+                        type="button"
+                        className="sf-dialog-password-toggle"
+                        aria-label={showPassword ? "Hide password" : "Show password"}
+                        onClick={() => setShowPassword((value) => !value)}
+                      >
+                        {showPassword ? <EyeOff size={16} /> : <Eye size={16} />}
+                      </button>
+                    )}
+                  </div>
                 </div>
               )}
             </div>

@@ -68,6 +68,8 @@ const corsOptions: cors.CorsOptions = {
     "X-Requested-With",
     "X-Tenant-Slug",
     "X-Share-Password",
+    "X-Silent-Alert",
+    "X-SF-Force-Refresh",
   ],
   origin: (origin, cb) => {
     if (!origin) {

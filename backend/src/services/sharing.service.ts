@@ -82,10 +82,6 @@ class SharingService {
       throw new AppError("Share permission denied", 403);
     }
 
-    // Public folder links are invitation-style links: they never expose folder
-    // contents anonymously. The recipient must authenticate to a SecureFile
-    // account in this workspace before the folder permissions can be used.
-
     if (Boolean(permissions.share)) {
       await requireAddon(companyId, "reshare");
     }
@@ -115,13 +111,29 @@ class SharingService {
       if (!recipient) {
         throw new AppError("Recipient not found or not active", 404);
       }
+
+      // Keep recipient rules enforced on the server as well as in the UI.
+      // A client may only share directly with an active Company Admin.
+      if (role === "CLIENT") {
+        const recipientRecord = await this.db.user.findUnique({
+          where: { id: recipient.id },
+          select: { role: true },
+        });
+        if (recipientRecord?.role !== "COMPANY_ADMIN") {
+          throw new AppError("Clients can only share with a Company Admin", 403);
+        }
+      } else if (role === "EMPLOYEE") {
+        const recipientRecord = await this.db.user.findUnique({
+          where: { id: recipient.id },
+          select: { role: true },
+        });
+        if (!["EMPLOYEE", "COMPANY_ADMIN"].includes(recipientRecord?.role || "")) {
+          throw new AppError("Employees can only share with employees or a Company Admin", 403);
+        }
+      }
     }
 
     const rawPublic = type === "PUBLIC" ? randomToken() : null;
-    // File sharing is intentionally limited to View / Download / Re-share.
-    // Folder sharing supports View / Download / Upload / Delete / Re-share,
-    // but folder editing is never exposed through sharing.
-    const isFileShare = Boolean(fileId);
     const s = await this.db.share.create({
       data: {
         companyId,
@@ -133,9 +145,10 @@ class SharingService {
         publicTokenHash: rawPublic ? hashToken(rawPublic) : undefined,
         canView: permissions.view !== false,
         canDownload: Boolean(permissions.download),
-        canUpload: isFileShare ? false : Boolean(permissions.upload),
-        canEdit: false,
-        canDelete: isFileShare ? false : Boolean(permissions.delete),
+        canUpload: Boolean(permissions.upload),
+        // Folder recipients can never edit/delete the folder itself.
+        canEdit: Boolean(fileId) && Boolean(permissions.edit),
+        canDelete: Boolean(fileId) && Boolean(permissions.delete),
         canShare: Boolean(permissions.share),
         passwordHash: password ? await hashPassword(String(password)) : undefined,
         expiresAt: expiresAt ? new Date(expiresAt) : undefined,
@@ -190,8 +203,8 @@ class SharingService {
       include: {
         file: { select: { id: true, name: true, mimeType: true } },
         folder: { select: { id: true, name: true } },
-        recipient: { select: { id: true, email: true, uniqueName: true, avatarUrl: true } },
-        owner: { select: { id: true, email: true, uniqueName: true, avatarUrl: true } },
+        recipient: { select: { id: true, email: true, uniqueName: true } },
+        owner: { select: { id: true, email: true, uniqueName: true } },
       },
       orderBy: { createdAt: "desc" },
     });
@@ -225,24 +238,16 @@ class SharingService {
     }
 
     const data: Record<string, unknown> = {};
-    const isFileShare = Boolean(s.fileId);
-    const allowedKeys = isFileShare
-      ? (["canView", "canDownload", "canShare"] as const)
-      : (["canView", "canDownload", "canUpload", "canDelete", "canShare"] as const);
-    for (const key of allowedKeys) {
+    for (const key of permissionKeys) {
       if (input[key] !== undefined) data[key] = Boolean(input[key]);
     }
-    // Legacy shares may contain these flags from older builds; normalize them
-    // whenever a share is updated so the permission model stays consistent.
-    data.canEdit = false;
-    if (isFileShare) {
-      data.canUpload = false;
+
+    // A shared folder is intentionally read/upload/share-only at the folder level.
+    // File-level permissions can still be managed independently when a file is shared.
+    if (s.folderId) {
+      data.canEdit = false;
       data.canDelete = false;
     }
-
-    // Public folder shares are authenticated links, so their selected folder
-    // permissions remain enforceable after sign-in. Internal shares keep the
-    // same permission model as before.
     if (data.canShare === true) {
       await requireAddon(s.companyId, "reshare");
     }

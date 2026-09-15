@@ -526,30 +526,34 @@ class FileService {
       data: { deletedAt: new Date() },
     });
 
-    await audit(f.companyId, userId, "TRASH", "FILE", f.id);
+    // The trash state is the source of truth. Audit/notifications are best-effort
+    // and must never turn a successful soft-delete into a failed request.
+    await audit(f.companyId, userId, "TRASH", "FILE", f.id).catch(() => undefined);
 
-    if (f.ownerId) {
-      await notify(
-        f.ownerId,
-        "File moved to trash",
-        `${f.name} was moved to Trash.`,
+    // Notifications are best-effort and must never delay or fail the trash action.
+    void Promise.allSettled([
+      ...(f.ownerId
+        ? [notify(
+            f.ownerId,
+            "File moved to trash",
+            `${f.name} was moved to Trash.`,
+            f.companyId,
+            "FILE_DELETED",
+            true,
+            { entityId: f.id },
+          )]
+        : []),
+      notifyCompanyAdmins(
         f.companyId,
+        "File moved to trash",
+        `${f.name} was moved to Trash by ${actorEmail || "a user"}.`,
         "FILE_DELETED",
-        true,
-        { entityId: f.id },
-      );
-    }
-
-    await notifyCompanyAdmins(
-      f.companyId,
-      "File moved to trash",
-      `${f.name} was moved to Trash by ${actorEmail || "a user"}.`,
-      "FILE_DELETED",
-      {
-        excludeUserId: userId,
-        entityId: f.id,
-      },
-    );
+        {
+          excludeUserId: userId,
+          entityId: f.id,
+        },
+      ),
+    ]);
   }
 
   async scanPages(

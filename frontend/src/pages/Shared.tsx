@@ -14,7 +14,7 @@ export default function Shared() {
   async function load() {
     try {
       setErr("");
-      setData(await api("/sharing"));
+      setData(await api("/sharing", { headers: { "X-SF-Force-Refresh": "true" } }));
     } catch (e: any) {
       setErr(e.message);
     }

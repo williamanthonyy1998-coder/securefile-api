@@ -11,7 +11,7 @@ export function sfConfirm(message: string, options: { title?: string; danger?: b
   return request<boolean>({ kind: "confirm", message, ...options });
 }
 
-export function sfPrompt(message: string, defaultValue = "", options: { title?: string; confirmLabel?: string } = {}) {
+export function sfPrompt(message: string, defaultValue = "", options: { title?: string; confirmLabel?: string; inputType?: "text" | "password"; inputLabel?: string; inputPlaceholder?: string } = {}) {
   return request<string | null>({ kind: "prompt", message, defaultValue, ...options });
 }
 

@@ -1,5 +1,6 @@
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import api from "../lib/axios";
+import { api as request } from "../lib/api";
 import { downloadPrivateFile, getPrivatePreviewUrl } from "../lib/api";
 
 export type FileSource = "UPLOAD" | "SCAN" | "FAX";
@@ -154,7 +155,7 @@ export function useCompanyUsers(enabled = true) {
     queryKey: fileKeys.users,
     enabled,
     queryFn: async (): Promise<CompanyUser[]> => {
-      const response = await api.get<CompanyUser[]>("/users");
+      const response = await api.get<CompanyUser[]>("/users/share-recipients");
       return Array.isArray(response.data) ? response.data : [];
     },
   });
@@ -237,7 +238,7 @@ export function useDeleteFolder() {
 
   return useMutation({
     mutationFn: async (folderId: string): Promise<void> => {
-      await api.delete(`/folders/${encodeURIComponent(folderId)}`);
+      await api.delete(`/folders/${encodeURIComponent(folderId)}`, { headers: { "X-Silent-Alert": "true" } });
     },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: fileKeys.folders });
@@ -277,7 +278,7 @@ export function useDeleteFile() {
 
   return useMutation({
     mutationFn: async (fileId: string): Promise<void> => {
-      await api.delete(`/files/${encodeURIComponent(fileId)}`);
+      await request(`/files/${encodeURIComponent(fileId)}`, { method: "DELETE", headers: { "X-Silent-Alert": "true" } });
     },
     onSuccess: (_data, fileId) => {
       invalidateFiles(queryClient);

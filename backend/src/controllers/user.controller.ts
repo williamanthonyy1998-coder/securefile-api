@@ -19,6 +19,18 @@ export async function listUsers(
   }
 }
 
+export async function listShareRecipients(
+  req: AuthedRequest,
+  res: Response,
+  next: NextFunction,
+) {
+  try {
+    return res.json(await userService.listShareRecipients(req.user!.id));
+  } catch (error) {
+    next(error);
+  }
+}
+
 export async function getCurrentUser(
   req: AuthedRequest,
   res: Response,
@@ -29,11 +41,6 @@ export async function getCurrentUser(
   } catch (error) {
     next(error);
   }
-}
-
-export async function updateCurrentProfile(req: AuthedRequest, res: Response, next: NextFunction) {
-  try { return res.json(await userService.updateCurrentProfile(req.user!.id, req.body || {})); }
-  catch (error) { next(error); }
 }
 
 export async function listChatUsers(

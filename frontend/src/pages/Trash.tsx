@@ -11,7 +11,7 @@ export default function Trash() {
   const load = async () => {
     setLoading(true);
     try {
-      setData(await api('/trash', { headers: { "X-Silent-Alert": "true" } }));
+      setData(await api('/trash', { headers: { "X-Silent-Alert": "true", "X-SF-Force-Refresh": "true" } }));
     } catch {
       // api() surfaces the error through the global side toast.
     } finally {
@@ -24,7 +24,7 @@ export default function Trash() {
   async function restore(type:string,id:string){
     setBusyId(`${type}-${id}`);
     try {
-      await api(`/trash/${type.toLowerCase()}/${id}/restore`,{method:'POST'});
+      await api(`/trash/${type.toLowerCase()}/${id}/restore`,{method:'POST', headers:{"X-Silent-Alert":"true"}});
       await load();
     } catch {} finally {
       setBusyId("");
@@ -35,7 +35,7 @@ export default function Trash() {
     if(!(await sfConfirm(`Permanently delete “${name}”? This cannot be undone.`, { title: "Permanent deletion", danger: true, confirmLabel: "Delete permanently" }))) return;
     setBusyId(`${type}-${id}-delete`);
     try {
-      await api(`/trash/${type.toLowerCase()}/${id}`,{method:'DELETE'});
+      await api(`/trash/${type.toLowerCase()}/${id}`,{method:'DELETE', headers:{"X-Silent-Alert":"true"}});
       await load();
     } catch {} finally {
       setBusyId("");

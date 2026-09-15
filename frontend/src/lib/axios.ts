@@ -18,6 +18,12 @@ api.interceptors.request.use(
             config.headers.Authorization = `Bearer ${token}`;
         }
 
+        if (typeof window !== "undefined") {
+            const match = window.location.pathname.match(/^\/t\/([^/?#]+)/i);
+            const tenant = localStorage.getItem("securefile_tenant") || (match?.[1] ? decodeURIComponent(match[1]).trim().toLowerCase() : "");
+            if (tenant) config.headers["X-Tenant-Slug"] = tenant;
+        }
+
         return config;
     },
     (error) => {
@@ -30,6 +36,13 @@ api.interceptors.response.use(
         return response;
     },
     (error) => {
+        const silent = error.config?.headers?.["X-Silent-Alert"] === "true" || error.config?.headers?.get?.("X-Silent-Alert") === "true";
+        const message = String(error.response?.data?.error || error.message || "Request failed.").trim();
+        if (message && !silent && typeof window !== "undefined") {
+            window.dispatchEvent(new CustomEvent("sf:alert", {
+                detail: { type: "error", message },
+            }));
+        }
         if (error.response?.status === 401) {
             localStorage.removeItem("sf_token");
             localStorage.removeItem("sf_email");
